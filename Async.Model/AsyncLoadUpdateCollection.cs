@@ -1,89 +1,84 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
-using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Async.Model
 {
-    public class AsyncLoadUpdateCollection<T> : ObservableCollection<T>, IList
+    public sealed class AsyncLoadUpdateCollection<TItem, TCollection> : IEnumerable, IAsyncCollection<TItem> where TCollection : ICollection, IEnumerable<TItem>
     {
-        public enum CollectionStatus
-        {
-            // Constants partially ordered, so everything from Ready represent completed states.
-            Loading,
-            Updating,
-            Ready,
-            LoadFailed,
-            UpdateFailed,
-            Cancelled
-        }
+        // Fields
 
-        private readonly TaskScheduler scheduler;
-        private readonly CancellationToken cancellationToken;
+        private readonly Func<IEnumerable<TItem>, TCollection> collectionFactory;
+        private readonly Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync;
+        private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
 
+        private readonly CancellationToken rootCancellationToken;
+        private readonly CancellationTokenSource cancellationTokenSource;
+
+        private TCollection items;
         private Task lastCompletedTask;
 
-        public CollectionStatus Status { get; private set; }
 
+        // Properties
+
+        public TCollection Items { get { return items; } }
+        public int Count { get { return items.Count; } }
+        
+        public CollectionStatus Status { get; private set; }
         public bool IsComplete { get { return Status >= CollectionStatus.Ready; } }
-        public bool IsReady { get { return Status == CollectionStatus.Ready; } }
 
         public AggregateException Exception { get { return (lastCompletedTask == null) ? null : lastCompletedTask.Exception; } }
         public Exception InnerException { get { return (Exception == null) ? null : Exception.InnerException; } }
         public string ErrorMessage { get { return (InnerException == null) ? null : InnerException.Message; } }
 
-        bool IList.IsReadOnly { get { return true; } }
-        bool IList.IsFixedSize { get { return false; } }
 
-        public AsyncLoadUpdateCollection(Func<Task<IEnumerable<T>>> loadDataAsyc, Func<IList<T>, Task<IEnumerable<ItemChange<T>>>> FetchUpdatesAsync, CancellationToken cancellationToken)
+        // Events
+
+        public event EventHandler<IEnumerable<TItem>> CollectionChanged;
+        public event EventHandler<CollectionStatus> StatusChanged;
+        
+
+        // Members
+
+        public AsyncLoadUpdateCollection(
+            Func<IEnumerable<TItem>, TCollection> collectionFactory,
+            Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsyc,
+            Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync,
+            CancellationToken cancellationToken)
         {
-            this.scheduler = (SynchronizationContext.Current == null) ? TaskScheduler.Current : TaskScheduler.FromCurrentSynchronizationContext();
-            this.cancellationToken = cancellationToken;
+            this.collectionFactory = collectionFactory;
+            this.loadDataAsync = loadDataAsyc;
+            this.fetchUpdatesAsync = fetchUpdatesAsync;
 
-            this.Status = CollectionStatus.Loading;
+            this.rootCancellationToken = cancellationToken;
+            this.cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken);
 
-            // The task tree we setup here is:
-            // loadDataAsync (fail or cancel) -> TaskFailedOrCancelled
-            // loadDataAsync (success)        -> InsertLoadedData (fail or cancel) -> TaskFailedOrCancelled
-            // loadDataAsync (success)        -> InsertLoadedData (success)        -> FetchUpdatesAsync (fail or cancel) -> TaskFailedOrCancelled
-            // loadDataAsync (success)        -> InsertLoadedData (success)        -> FetchUpdatesAsync (success)        -> PerformUpdates (fail or cancel) -> TaskFailedOrCancelled
-            // loadDataAsync (success)        -> InsertLoadedData (success)        -> FetchUpdatesAsync (success)        -> PerformUpdates (success)        -> Done
+            this.Status = CollectionStatus.Ready;
+        }
 
-            var loadDataTask = loadDataAsyc();
+        public void Cancel()
+        {
+            cancellationTokenSource.Cancel();
+        }
 
-            var insertTask = loadDataTask.ContinueWith(InsertLoadedData,
-                cancellationToken,
-                TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
-                scheduler);
+        public void LoadAsync()
+        {
+            if (loadDataAsync == null)
+                return;
 
-            insertTask.ContinueWith(t =>
-                {
-                    // Since we cannot use ContinueWith with pre-existing tasks, we must setup the rest of the task tree inside this task
-                    var fetchUpdatesTask = FetchUpdatesAsync(Items);
+            ChangeStatus(CollectionStatus.Loading);
 
-                    var updateTask = fetchUpdatesTask.ContinueWith(PerformUpdates,
-                        cancellationToken,
-                        TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
-                        scheduler);
+            var scheduler = (SynchronizationContext.Current == null) ? TaskScheduler.Current : TaskScheduler.FromCurrentSynchronizationContext();
+            var token = cancellationTokenSource.Token;
+            
+            var loadDataTask = loadDataAsync(token);
 
-                    // Handle errors for the fetch and update tasks
-
-                    fetchUpdatesTask.ContinueWith(TaskFailedOrCancelled,
-                        cancellationToken,
-                        TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
-                        scheduler);
-
-                    updateTask.ContinueWith(TaskFailedOrCancelled,
-                        cancellationToken,
-                        TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
-                        scheduler);
-                },
-                cancellationToken,
+            var insertDataTask = loadDataTask.ContinueWith(InsertLoadedData,
+                token,
+                token,
                 TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler);
 
@@ -91,121 +86,128 @@ namespace Async.Model
             // Handle errors for the load and insert tasks
 
             loadDataTask.ContinueWith(TaskFailedOrCancelled,
-                cancellationToken,
+                CancellationToken.None,
                 TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler);
 
-            insertTask.ContinueWith(TaskFailedOrCancelled,
-                cancellationToken,
+            insertDataTask.ContinueWith(TaskFailedOrCancelled,
+                CancellationToken.None,
                 TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler);
         }
 
-        protected override void ClearItems()
+        public void UpdateAsync()
         {
-            throw new NotSupportedException("Collection is read-only");
+            if (fetchUpdatesAsync == null)
+                return;
+
+            ChangeStatus(CollectionStatus.Updating);
+
+            var scheduler = (SynchronizationContext.Current == null) ? TaskScheduler.Current : TaskScheduler.FromCurrentSynchronizationContext();
+            var token = cancellationTokenSource.Token;
+
+            var updateDataTask = fetchUpdatesAsync(items, token);
+
+            var performUpdatesTask = updateDataTask.ContinueWith(PerformUpdates,
+                token,
+                token,
+                TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
+                scheduler);
+
+
+            // Handle errors for the fetch and perform tasks
+
+            updateDataTask.ContinueWith(TaskFailedOrCancelled,
+                CancellationToken.None,
+                TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
+                scheduler);
+
+            performUpdatesTask.ContinueWith(TaskFailedOrCancelled,
+                CancellationToken.None,
+                TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
+                scheduler);
         }
 
-        protected override void InsertItem(int index, T item)
+        public IEnumerator<TItem> GetEnumerator()
         {
-            throw new NotSupportedException("Collection is read-only");
+            return items.GetEnumerator();
         }
 
-        protected override void RemoveItem(int index)
+        IEnumerator IEnumerable.GetEnumerator()
         {
-            throw new NotSupportedException("Collection is read-only");
+            return items.GetEnumerator();
         }
 
-        protected override void SetItem(int index, T item)
+        private void InsertLoadedData(Task<IEnumerable<TItem>> loadDataTask, object cancellationToken)
         {
-            throw new NotSupportedException("Collection is read-only");
-        }
+            var token = (CancellationToken)cancellationToken;
+            token.ThrowIfCancellationRequested();
 
-        private void InsertLoadedData(Task<IEnumerable<T>> loadDataTask)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+            // This will enumerate Result and may therefore throw an exception in which case we won't change items
+            var newItems = collectionFactory(loadDataTask.Result);
 
-            // We need access to AddRange and happen to know that ObservableCollection always use List<T>...
-            var items = Items as List<T>;
-
-            // We don't know if the enumeration can fail mid-way through, so make the insert "transactional"
-            try
-            {
-                items.AddRange(loadDataTask.Result);
-            }
-            catch (Exception)
-            {
-                items.Clear();
-                throw;
-            }
-
-            // Prepare for update operation
-            Status = CollectionStatus.Updating;
-
-            // Fire notification events
+            // Update items and status
+            ChangeItems(newItems);
+            ChangeStatus(CollectionStatus.Ready);
 
             // NOTE: cannot use the multi-item Add event here, since frameworks like WPF don't support it
             // See: http://www.interact-sw.co.uk/iangblog/2013/02/22/batch-inotifycollectionchanged
-            OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
-
-            OnPropertyChanged(new PropertyChangedEventArgs("Count"));
-            OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
-
-            OnPropertyChanged(new PropertyChangedEventArgs("Status"));
         }
 
-        private void PerformUpdates(Task<IEnumerable<ItemChange<T>>> updateDataTask)
+        private void PerformUpdates(Task<IEnumerable<ItemChange<TItem>>> updateDataTask, object cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var token = (CancellationToken)cancellationToken;
+            token.ThrowIfCancellationRequested();
 
-            // We need access to AddRange and happen to know that ObservableCollection always use List<T>...
-            var items = Items as List<T>;
+            var query = items
+                .FullOuterJoin(updateDataTask.Result, i => i, u => u.Item,
+                    (i, u, k) => new ItemChange<TItem>(u.Type, (u.Type == ItemChange<TItem>.ChangeType.Updated) ? u.Item : k))
+                .Where(u => u.Type != ItemChange<TItem>.ChangeType.Removed)
+                .Select(u => u.Item);
 
             // Enumerating Result may throw an exception, which is fine in this case
-            var newItems = items
-                .FullOuterJoin(updateDataTask.Result, i => i, u => u.Item,
-                    (i, u, k) => new ItemChange<T>(u.Type, (u.Type == ItemChange<T>.ChangeType.Updated) ? u.Item : k))
-                .Where(u => u.Type != ItemChange<T>.ChangeType.Removed)
-                .Select(u => u.Item)
-                .ToArray();
+            var newItems = collectionFactory(query);
 
-            items.Clear();
-            items.AddRange(newItems);
-
-            Status = CollectionStatus.Ready;
-
-            // Fire notification events
+            // Update items and status
+            ChangeItems(newItems);
+            ChangeStatus(CollectionStatus.Ready);
 
             // It would be too much work to use the multi-item events here even if they were properly supported,
             // since the indices change with each add and remove
-            OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
-
-            OnPropertyChanged(new PropertyChangedEventArgs("Count"));
-            OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
-
-            OnPropertyChanged(new PropertyChangedEventArgs("Status"));
-            OnPropertyChanged(new PropertyChangedEventArgs("IsComplete"));
-            OnPropertyChanged(new PropertyChangedEventArgs("IsReady"));
         }
 
         private void TaskFailedOrCancelled(Task previous)
         {
-            // Update fields and properties
+            // Update status
             lastCompletedTask = previous;
-            Status = previous.IsCanceled ? CollectionStatus.Cancelled
+            var newStatus = previous.IsCanceled ? CollectionStatus.Cancelled
                 : (Status == CollectionStatus.Loading) ? CollectionStatus.LoadFailed : CollectionStatus.UpdateFailed;
 
-            // Fire events for properties that changed
+            ChangeStatus(newStatus);
+        }
 
-            OnPropertyChanged(new PropertyChangedEventArgs("Status"));
-            OnPropertyChanged(new PropertyChangedEventArgs("IsComplete"));
+        private void ChangeItems(TCollection newItems)
+        {
+            var oldItems = items;
+            items = newItems;
 
-            if (previous.IsFaulted)
-            {
-                OnPropertyChanged(new PropertyChangedEventArgs("Exception"));
-                OnPropertyChanged(new PropertyChangedEventArgs("InnerException"));
-                OnPropertyChanged(new PropertyChangedEventArgs("ErrorMessage"));
-            }
+            var handler = CollectionChanged;
+            if (handler == null)
+                return;
+
+            handler(this, oldItems);
+        }
+
+        private void ChangeStatus(CollectionStatus newStatus)
+        {
+            var oldStatus = Status;
+            Status = newStatus;
+
+            var handler = StatusChanged;
+            if (handler == null)
+                return;
+
+            handler(this, oldStatus);
         }
     }
 }

@@ -38,6 +38,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AsyncLoadUpdateCollection.cs" />
+    <Compile Include="IAsyncCollection.cs" />
     <Compile Include="ItemChange.cs" />
     <Compile Include="LinqExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
