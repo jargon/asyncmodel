@@ -15,7 +15,7 @@ namespace Async.Model.UnitTest
         [Test]
         public void CanLoadEmptyList()
         {
-            var loader = new AsyncLoadUpdateCollection<string, List<string>>(
+            var loader = new AsyncLoader<string, List<string>>(
                 collectionFactory: items => new List<string>(items),
                 loadDataAsyc: token => Task.FromResult((IEnumerable<string>)new string[] { }),
                 fetchUpdatesAsync: null,

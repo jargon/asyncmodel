@@ -37,7 +37,7 @@
     <!-- A reference to the entire .NET Framework is automatically included -->
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AsyncLoadUpdateCollection.cs" />
+    <Compile Include="AsyncLoader.cs" />
     <Compile Include="IAsyncCollection.cs" />
     <Compile Include="ItemChange.cs" />
     <Compile Include="LinqExtensions.cs" />

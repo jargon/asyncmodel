@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Async.Model
 {
-    public sealed class AsyncLoadUpdateCollection<TItem, TCollection> : IEnumerable, IAsyncCollection<TItem> where TCollection : ICollection, IEnumerable<TItem>
+    public sealed class AsyncLoader<TItem, TCollection> : IEnumerable, IAsyncCollection<TItem> where TCollection : ICollection, IEnumerable<TItem>
     {
         // Fields
 
@@ -43,7 +43,7 @@ namespace Async.Model
 
         // Members
 
-        public AsyncLoadUpdateCollection(
+        public AsyncLoader(
             Func<IEnumerable<TItem>, TCollection> collectionFactory,
             Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsyc,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync,
