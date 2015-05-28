@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Async.Model
 {
-    public sealed class AsyncLoader<TItem, TCollection> : IEnumerable, IAsyncCollection<TItem> where TCollection : ICollection, IEnumerable<TItem>
+    public sealed class AsyncLoader<TItem, TCollection> : IEnumerable, IAsyncCollection<TItem> where TCollection : IEnumerable<TItem>
     {
         // Fields
 
@@ -20,12 +21,12 @@ namespace Async.Model
 
         private TCollection items;
         private Task lastCompletedTask;
+        private IImmutableList<CollectionChangedHandler<TItem>> collectionChangesHandlers;
 
 
         // Properties
 
         public TCollection Items { get { return items; } }
-        public int Count { get { return items.Count; } }
         
         public CollectionStatus Status { get; private set; }
         public bool IsComplete { get { return Status >= CollectionStatus.Ready; } }
@@ -37,7 +38,47 @@ namespace Async.Model
 
         // Events
 
-        public event EventHandler<IEnumerable<TItem>> CollectionChanged;
+        public event CollectionResetHandler CollectionReset;
+        public event CollectionChangedHandler<TItem> CollectionChanged
+        {
+            add
+            {
+                bool wonRace = false;
+
+                // We could be racing against other additions or removals, so we need to use CompareExchange in a loop
+                do
+                {
+                    var expectedList = Interlocked.CompareExchange(ref collectionChangesHandlers, null, null);
+                    var newList = (expectedList == null) ? ImmutableArray.Create(value) : expectedList.Add(value);
+                    var actualList = Interlocked.CompareExchange(ref collectionChangesHandlers, newList, expectedList);
+
+                    // If actualList is the same reference as expectedList, noone changed the field inside our read-update-write cycle
+                    wonRace = Object.ReferenceEquals(actualList, expectedList);
+                }
+                while (!wonRace);
+            }
+            remove
+            {
+                bool wonRace = false;
+
+                // We could be racing against other additions or removals, so we need to use CompareExchange in a loop
+                do
+                {
+                    var expectedList = Interlocked.CompareExchange(ref collectionChangesHandlers, null, null);
+                    if (expectedList == null)
+                        return;  // handler definitely not registered given that our registration list is non-existant
+
+                    var newList = expectedList.Remove(value);
+                    if (newList == expectedList)
+                        return;  // handler was not registered, given that Remove returned the same list
+
+                    var actualList = Interlocked.CompareExchange(ref collectionChangesHandlers, newList, expectedList);
+
+                    wonRace = Object.ReferenceEquals(actualList, expectedList);
+                }
+                while (!wonRace);
+            }
+        }
         public event EventHandler<CollectionStatus> StatusChanged;
         
 
@@ -143,15 +184,12 @@ namespace Async.Model
             var token = (CancellationToken)cancellationToken;
             token.ThrowIfCancellationRequested();
 
-            // This will enumerate Result and may therefore throw an exception in which case we won't change items
-            var newItems = collectionFactory(loadDataTask.Result);
+            var changes = loadDataTask.Result
+                .Select(item => new ItemChange<TItem>(ChangeType.Added, item));
 
             // Update items and status
-            ChangeItems(newItems);
+            ChangeItems(changes);
             ChangeStatus(CollectionStatus.Ready);
-
-            // NOTE: cannot use the multi-item Add event here, since frameworks like WPF don't support it
-            // See: http://www.interact-sw.co.uk/iangblog/2013/02/22/batch-inotifycollectionchanged
         }
 
         private void PerformUpdates(Task<IEnumerable<ItemChange<TItem>>> updateDataTask, object cancellationToken)
@@ -159,21 +197,14 @@ namespace Async.Model
             var token = (CancellationToken)cancellationToken;
             token.ThrowIfCancellationRequested();
 
-            var query = items
-                .FullOuterJoin(updateDataTask.Result, i => i, u => u.Item,
-                    (i, u, k) => new ItemChange<TItem>(u.Type, (u.Type == ItemChange<TItem>.ChangeType.Updated) ? u.Item : k))
-                .Where(u => u.Type != ItemChange<TItem>.ChangeType.Removed)
-                .Select(u => u.Item);
-
             // Enumerating Result may throw an exception, which is fine in this case
-            var newItems = collectionFactory(query);
+            var changes = items
+                .FullOuterJoin(updateDataTask.Result, i => i, u => u.Item,
+                    (i, u, k) => new ItemChange<TItem>(u.Type, (u.Type == ChangeType.Updated) ? u.Item : k));
 
             // Update items and status
-            ChangeItems(newItems);
+            ChangeItems(changes);
             ChangeStatus(CollectionStatus.Ready);
-
-            // It would be too much work to use the multi-item events here even if they were properly supported,
-            // since the indices change with each add and remove
         }
 
         private void TaskFailedOrCancelled(Task previous)
@@ -186,16 +217,36 @@ namespace Async.Model
             ChangeStatus(newStatus);
         }
 
-        private void ChangeItems(TCollection newItems)
+        private void ChangeItems(IEnumerable<ItemChange<TItem>> changes)
         {
-            var oldItems = items;
-            items = newItems;
+            // Materialize to prevent multiple enumerations of source
+            changes = changes.ToArray();
 
-            var handler = CollectionChanged;
-            if (handler == null)
-                return;
+            var newItems = changes
+                .Where(c => c.Type != ChangeType.Removed)
+                .Select(c => c.Item);
+            items = collectionFactory(newItems);
 
-            handler(this, oldItems);
+            // Notify collection reset listeners
+            // Use CompareExchange to make a safe read of collectionChangedHandlers
+            var resetHandler = CollectionReset;
+            if (resetHandler != null)
+            {
+                resetHandler(this);
+            }
+
+            // Notify item change listeners
+            var changeHandlers = Interlocked.CompareExchange(ref collectionChangesHandlers, null, null);
+            if (changeHandlers != null)
+            {
+                // We don't want to include unchanged items in our notification
+                var actualChanges = changes
+                    .Where(c => c.Type != ChangeType.Unchanged);
+
+                foreach (var changeHandler in changeHandlers)
+                    changeHandler(this, actualChanges);
+                
+            }
         }
 
         private void ChangeStatus(CollectionStatus newStatus)

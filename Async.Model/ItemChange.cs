@@ -1,19 +1,17 @@
 ﻿namespace Async.Model
 {
-    public struct ItemChange<T>
+    public class ItemChange<T> : IItemChange<T>
     {
-        public enum ChangeType
-        {
-            Unchanged, Added, Removed, Updated
-        }
+        private readonly ChangeType type;
+        private readonly T item;
 
-        public readonly ChangeType Type;
-        public readonly T Item;
+        public ChangeType Type { get { return type; } }
+        public T Item { get { return item; } }
 
         public ItemChange(ChangeType type, T item)
         {
-            this.Type = type;
-            this.Item = item;
+            this.type = type;
+            this.item = item;
         }
     }
 }
