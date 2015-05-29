@@ -184,12 +184,21 @@ namespace Async.Model
 
         public TItem First()
         {
-            return seq.First();
+            var item = seq.First();
+
+            var changes = new[] { new ItemChange<TItem>(ChangeType.Removed, item) };
+            NotifyCollectionChanged(changes);
+
+            return item;
         }
 
         public ISeq<TItem> Conj(TItem item)
         {
             seq.Conj(item);
+
+            var changes = new[] { new ItemChange<TItem>(ChangeType.Added, item) };
+            NotifyCollectionChanged(changes);
+
             return this;
         }
         #endregion
@@ -243,7 +252,6 @@ namespace Async.Model
             seq = seqFactory(newItems);
 
             // Notify collection reset listeners
-            // Use CompareExchange to make a safe read of collectionChangedHandlers
             var resetHandler = CollectionReset;
             if (resetHandler != null)
             {
@@ -251,16 +259,20 @@ namespace Async.Model
             }
 
             // Notify item change listeners
+            // We don't want to include unchanged items in our notification
+            var actualChanges = changes
+                .Where(c => c.Type != ChangeType.Unchanged);
+            NotifyCollectionChanged(actualChanges);
+        }
+
+        private void NotifyCollectionChanged(IEnumerable<ItemChange<TItem>> changes)
+        {
+            // Use CompareExchange to make a safe read of collectionChangedHandlers
             var changeHandlers = Interlocked.CompareExchange(ref collectionChangedHandlers, null, null);
             if (changeHandlers != null)
             {
-                // We don't want to include unchanged items in our notification
-                var actualChanges = changes
-                    .Where(c => c.Type != ChangeType.Unchanged);
-
                 foreach (var changeHandler in changeHandlers)
-                    changeHandler(this, actualChanges);
-                
+                    changeHandler(this, changes);
             }
         }
 

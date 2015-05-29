@@ -31,8 +31,9 @@ namespace Async.Model.Sequence
 
             public T First()
             {
-                // TODO: Should we remove item from list or is it ok for ListSeq.First to be a peek vs QueueSeq.First that is a pop?
-                return list[0];
+                var item = list[0];
+                list.RemoveAt(0);
+                return item;
             }
 
             public IEnumerator<T> GetEnumerator()
