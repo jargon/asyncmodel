@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Async.Model.Sequence;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -8,26 +9,24 @@ using System.Threading.Tasks;
 
 namespace Async.Model
 {
-    public sealed class AsyncLoader<TItem, TCollection> : IEnumerable, IAsyncCollection<TItem> where TCollection : IEnumerable<TItem>
+    public sealed class AsyncLoader<TItem> : IAsyncCollection<TItem>, ISeq<TItem>
     {
         // Fields
 
-        private readonly Func<IEnumerable<TItem>, TCollection> collectionFactory;
+        private readonly Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory;
         private readonly Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync;
         private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
 
         private readonly CancellationToken rootCancellationToken;
         private readonly CancellationTokenSource cancellationTokenSource;
 
-        private TCollection items;
+        private ISeq<TItem> seq;
         private Task lastCompletedTask;
-        private IImmutableList<CollectionChangedHandler<TItem>> collectionChangesHandlers;
+        private IImmutableList<CollectionChangedHandler<TItem>> collectionChangedHandlers;
 
 
         // Properties
 
-        public TCollection Items { get { return items; } }
-        
         public CollectionStatus Status { get; private set; }
         public bool IsComplete { get { return Status >= CollectionStatus.Ready; } }
 
@@ -48,9 +47,9 @@ namespace Async.Model
                 // We could be racing against other additions or removals, so we need to use CompareExchange in a loop
                 do
                 {
-                    var expectedList = Interlocked.CompareExchange(ref collectionChangesHandlers, null, null);
+                    var expectedList = Interlocked.CompareExchange(ref collectionChangedHandlers, null, null);
                     var newList = (expectedList == null) ? ImmutableArray.Create(value) : expectedList.Add(value);
-                    var actualList = Interlocked.CompareExchange(ref collectionChangesHandlers, newList, expectedList);
+                    var actualList = Interlocked.CompareExchange(ref collectionChangedHandlers, newList, expectedList);
 
                     // If actualList is the same reference as expectedList, noone changed the field inside our read-update-write cycle
                     wonRace = Object.ReferenceEquals(actualList, expectedList);
@@ -64,7 +63,7 @@ namespace Async.Model
                 // We could be racing against other additions or removals, so we need to use CompareExchange in a loop
                 do
                 {
-                    var expectedList = Interlocked.CompareExchange(ref collectionChangesHandlers, null, null);
+                    var expectedList = Interlocked.CompareExchange(ref collectionChangedHandlers, null, null);
                     if (expectedList == null)
                         return;  // handler definitely not registered given that our registration list is non-existant
 
@@ -72,7 +71,7 @@ namespace Async.Model
                     if (newList == expectedList)
                         return;  // handler was not registered, given that Remove returned the same list
 
-                    var actualList = Interlocked.CompareExchange(ref collectionChangesHandlers, newList, expectedList);
+                    var actualList = Interlocked.CompareExchange(ref collectionChangedHandlers, newList, expectedList);
 
                     wonRace = Object.ReferenceEquals(actualList, expectedList);
                 }
@@ -85,21 +84,23 @@ namespace Async.Model
         // Members
 
         public AsyncLoader(
-            Func<IEnumerable<TItem>, TCollection> collectionFactory,
-            Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsyc,
+            Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory,
+            Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync,
             CancellationToken cancellationToken)
         {
-            this.collectionFactory = collectionFactory;
-            this.loadDataAsync = loadDataAsyc;
+            this.seqFactory = seqFactory;
+            this.loadDataAsync = loadDataAsync;
             this.fetchUpdatesAsync = fetchUpdatesAsync;
 
             this.rootCancellationToken = cancellationToken;
             this.cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken);
 
+            this.seq = seqFactory(Enumerable.Empty<TItem>());
             this.Status = CollectionStatus.Ready;
         }
 
+        #region IAsyncCollection API
         public void Cancel()
         {
             cancellationTokenSource.Cancel();
@@ -114,7 +115,7 @@ namespace Async.Model
 
             var scheduler = (SynchronizationContext.Current == null) ? TaskScheduler.Current : TaskScheduler.FromCurrentSynchronizationContext();
             var token = cancellationTokenSource.Token;
-            
+
             var loadDataTask = loadDataAsync(token);
 
             var insertDataTask = loadDataTask.ContinueWith(InsertLoadedData,
@@ -147,7 +148,7 @@ namespace Async.Model
             var scheduler = (SynchronizationContext.Current == null) ? TaskScheduler.Current : TaskScheduler.FromCurrentSynchronizationContext();
             var token = cancellationTokenSource.Token;
 
-            var updateDataTask = fetchUpdatesAsync(items, token);
+            var updateDataTask = fetchUpdatesAsync(seq, token);
 
             var performUpdatesTask = updateDataTask.ContinueWith(PerformUpdates,
                 token,
@@ -168,16 +169,30 @@ namespace Async.Model
                 TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler);
         }
+        #endregion
 
+        #region ISeq API
         public IEnumerator<TItem> GetEnumerator()
         {
-            return items.GetEnumerator();
+            return seq.GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
         {
-            return items.GetEnumerator();
+            return seq.GetEnumerator();
         }
+
+        public TItem First()
+        {
+            return seq.First();
+        }
+
+        public ISeq<TItem> Conj(TItem item)
+        {
+            seq.Conj(item);
+            return this;
+        }
+        #endregion
 
         private void InsertLoadedData(Task<IEnumerable<TItem>> loadDataTask, object cancellationToken)
         {
@@ -198,7 +213,7 @@ namespace Async.Model
             token.ThrowIfCancellationRequested();
 
             // Enumerating Result may throw an exception, which is fine in this case
-            var changes = items
+            var changes = seq
                 .FullOuterJoin(updateDataTask.Result, i => i, u => u.Item,
                     (i, u, k) => new ItemChange<TItem>(u.Type, (u.Type == ChangeType.Updated) ? u.Item : k));
 
@@ -225,7 +240,7 @@ namespace Async.Model
             var newItems = changes
                 .Where(c => c.Type != ChangeType.Removed)
                 .Select(c => c.Item);
-            items = collectionFactory(newItems);
+            seq = seqFactory(newItems);
 
             // Notify collection reset listeners
             // Use CompareExchange to make a safe read of collectionChangedHandlers
@@ -236,7 +251,7 @@ namespace Async.Model
             }
 
             // Notify item change listeners
-            var changeHandlers = Interlocked.CompareExchange(ref collectionChangesHandlers, null, null);
+            var changeHandlers = Interlocked.CompareExchange(ref collectionChangedHandlers, null, null);
             if (changeHandlers != null)
             {
                 // We don't want to include unchanged items in our notification
