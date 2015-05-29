@@ -6,10 +6,37 @@ using System.Threading.Tasks;
 
 namespace Async.Model.Sequence
 {
+    public struct TakeResult<T>
+    {
+        public readonly T First;
+        public readonly ISeq<T> Rest;
+
+        public TakeResult(T item, ISeq<T> seq)
+        {
+            this.First = item;
+            this.Rest = seq;
+        }
+    }
+
     public interface ISeq<T> : IEnumerable<T>
     {
         // TODO: Is it okay to call First on empty seq?
-        T First();
+        /// <summary>
+        /// Takes the "front" item of the sequence. What item that is depends on the seq, but should always be the
+        /// "natural" element. For a list-based sequence this would mean the first item in the list, whereas for a
+        /// queue-based seq, it should mean a dequeue operation. The result is the taken item along with the seq less
+        /// the taken item.
+        /// </summary>
+        /// <returns>The first element and the rest of the seq.</returns>
+        TakeResult<T> Take();
+
+        /// <summary>
+        /// Conjoins the item onto the seq. Where the item is placed depends on the sequence, but should always be the
+        /// "natural" position. For a list-based seq, this would mean at the end of the list, whereas for a queue-based
+        /// seq, the item should be enqueued.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
         ISeq<T> Conj(T item);
     }
 }

@@ -41,6 +41,7 @@
     <Compile Include="ItemChange.cs" />
     <Compile Include="LinqExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Sequence\IAsyncSeq.cs" />
     <Compile Include="Sequence\ISeq.cs" />
     <Compile Include="Sequence\Seq.cs" />
   </ItemGroup>

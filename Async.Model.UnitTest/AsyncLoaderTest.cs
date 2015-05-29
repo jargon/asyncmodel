@@ -22,7 +22,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: token => Task.FromResult((IEnumerable<string>)new string[] { }),
                 fetchUpdatesAsync: null,
-                cancellationToken: CancellationToken.None);
+                masterCancellationToken: CancellationToken.None);
 
             loader.LoadAsync();
         }
@@ -40,7 +40,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: null,
                 fetchUpdatesAsync: null,
-                cancellationToken: CancellationToken.None);
+                masterCancellationToken: CancellationToken.None);
 
             // Simulate an external consumer of this collection
             IAsyncCollection<IItem> externalView = loader;
@@ -59,7 +59,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems),
                 fetchUpdatesAsync: null,
-                cancellationToken: CancellationToken.None);
+                masterCancellationToken: CancellationToken.None);
 
             // Simulate an external consumer of this collection
             IAsyncCollection<IItem> externalView = loader;
@@ -100,30 +100,6 @@ namespace Async.Model.UnitTest
         {
             var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None);
             loader.Conj(1);
-        }
-
-        [Test]
-        public void CanUseArbitraryCollectionsUnderneath()
-        {
-            IEnumerable<int> loadedItems = new[] { 1, 2, 3 };
-
-            var seqFactory = Seq.DelegateBased<int, ConcurrentQueue<int>>(
-                collFactory: items => new ConcurrentQueue<int>(items),
-                first: queue => { int res; queue.TryDequeue(out res); return res; },
-                conj: (queue, item) => { queue.Enqueue(item); return queue; });
-
-            var loader = new AsyncLoader<int>(
-                seqFactory: seqFactory,
-                loadDataAsync: token => Task.FromResult(loadedItems),
-                fetchUpdatesAsync: null,
-                cancellationToken: CancellationToken.None);
-
-            loader.LoadAsync();
-            loader.Conj(4);
-            int i = loader.First();
-
-            Assert.That(i, Is.EqualTo(1));
-            Assert.That(loader, Is.EqualTo(new[] { 2, 3, 4 }));
         }
     }
 }

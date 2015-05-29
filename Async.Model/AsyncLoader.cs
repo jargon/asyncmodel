@@ -9,18 +9,17 @@ using System.Threading.Tasks;
 
 namespace Async.Model
 {
-    public sealed class AsyncLoader<TItem> : IAsyncCollection<TItem>, ISeq<TItem>
+    public sealed class AsyncLoader<TItem> : IAsyncCollection<TItem>, IAsyncSeq<TItem>
     {
         // Fields
 
-        private readonly Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory;
+        private readonly Func<IEnumerable<TItem>, IAsyncSeq<TItem>> seqFactory;
         private readonly Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync;
         private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
 
-        private readonly CancellationToken rootCancellationToken;
         private readonly CancellationTokenSource cancellationTokenSource;
 
-        private ISeq<TItem> seq;
+        private IAsyncSeq<TItem> seq;
         private Task lastCompletedTask;
         private IImmutableList<CollectionChangedHandler<TItem>> collectionChangedHandlers;
 
@@ -87,16 +86,20 @@ namespace Async.Model
             Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory,
             Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync,
-            CancellationToken cancellationToken)
+            CancellationToken masterCancellationToken)
         {
-            this.seqFactory = seqFactory;
             this.loadDataAsync = loadDataAsync;
             this.fetchUpdatesAsync = fetchUpdatesAsync;
 
-            this.rootCancellationToken = cancellationToken;
-            this.cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken);
+            this.cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(masterCancellationToken);
 
-            this.seq = seqFactory(Enumerable.Empty<TItem>());
+            // If the given seq factory does not produce async seqs, we need to wrap it
+            var asyncSeqFactory = seqFactory as Func<IEnumerable<TItem>, IAsyncSeq<TItem>>;
+            if (asyncSeqFactory == null)
+                asyncSeqFactory = items => seqFactory(items).AsAsync();
+
+            this.seqFactory = asyncSeqFactory;
+            this.seq = asyncSeqFactory(Enumerable.Empty<TItem>());
             this.Status = CollectionStatus.Ready;
         }
 
@@ -171,7 +174,7 @@ namespace Async.Model
         }
         #endregion
 
-        #region ISeq API
+        #region IAsyncSeq API
         public IEnumerator<TItem> GetEnumerator()
         {
             return seq.GetEnumerator();
@@ -182,19 +185,47 @@ namespace Async.Model
             return seq.GetEnumerator();
         }
 
-        public TItem First()
+        public TakeResult<TItem> Take()
         {
-            var item = seq.First();
+            var result = seq.Take();
+            seq = result.Rest as IAsyncSeq<TItem>;
 
-            var changes = new[] { new ItemChange<TItem>(ChangeType.Removed, item) };
+            var changes = new[] { new ItemChange<TItem>(ChangeType.Removed, result.First) };
             NotifyCollectionChanged(changes);
 
-            return item;
+            return new TakeResult<TItem>(result.First, this);
         }
 
         public ISeq<TItem> Conj(TItem item)
         {
-            seq.Conj(item);
+            seq = seq.Conj(item) as IAsyncSeq<TItem>;
+
+            var changes = new[] { new ItemChange<TItem>(ChangeType.Added, item) };
+            NotifyCollectionChanged(changes);
+
+            return this;
+        }
+
+        public async Task<TakeResult<TItem>> TakeAsync(CancellationToken cancellationToken)
+        {
+            // Support cancellation from 3 sources: the master token given at construction, the Cancel method, the token given to this method
+            var lcs = CancellationTokenSource.CreateLinkedTokenSource(cancellationTokenSource.Token, cancellationToken);
+
+            var result = await seq.TakeAsync(lcs.Token);
+            seq = result.Rest as IAsyncSeq<TItem>;
+
+            var changes = new[] { new ItemChange<TItem>(ChangeType.Removed, result.First) };
+            NotifyCollectionChanged(changes);
+
+            return new TakeResult<TItem>(result.First, this);
+        }
+
+        public async Task<IAsyncSeq<TItem>> ConjAsync(TItem item, CancellationToken cancellationToken)
+        {
+            // Support cancellation from 3 sources: the master token given at construction, the Cancel method, the token given to this method
+            var lcs = CancellationTokenSource.CreateLinkedTokenSource(cancellationTokenSource.Token, cancellationToken);
+
+            seq = await seq.ConjAsync(item, lcs.Token);
 
             var changes = new[] { new ItemChange<TItem>(ChangeType.Added, item) };
             NotifyCollectionChanged(changes);
@@ -203,6 +234,7 @@ namespace Async.Model
         }
         #endregion
 
+        #region Task continuations
         private void InsertLoadedData(Task<IEnumerable<TItem>> loadDataTask, object cancellationToken)
         {
             var token = (CancellationToken)cancellationToken;
@@ -240,12 +272,14 @@ namespace Async.Model
 
             ChangeStatus(newStatus);
         }
+        #endregion
 
         private void ChangeItems(IEnumerable<ItemChange<TItem>> changes)
         {
             // Materialize to prevent multiple enumerations of source
             changes = changes.ToArray();
 
+            // Make a seq of the new items
             var newItems = changes
                 .Where(c => c.Type != ChangeType.Removed)
                 .Select(c => c.Item);

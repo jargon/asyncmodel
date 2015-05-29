@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Async.Model.Sequence
@@ -29,11 +30,11 @@ namespace Async.Model.Sequence
                 return this;
             }
 
-            public T First()
+            public TakeResult<T> Take()
             {
                 var item = list[0];
                 list.RemoveAt(0);
-                return item;
+                return new TakeResult<T>(item, this);
             }
 
             public IEnumerator<T> GetEnumerator()
@@ -67,9 +68,9 @@ namespace Async.Model.Sequence
                 return this;
             }
 
-            public T First()
+            public TakeResult<T> Take()
             {
-                return queue.Dequeue();
+                return new TakeResult<T>(queue.Dequeue(), this);
             }
 
             public IEnumerator<T> GetEnumerator()
@@ -83,47 +84,57 @@ namespace Async.Model.Sequence
             }
         }
 
-        public static Func<IEnumerable<TItem>, ISeq<TItem>> DelegateBased<TItem, TCollection>(
-            Func<IEnumerable<TItem>, TCollection> collFactory,
-            Func<TCollection, TItem> first,
-            Func<TCollection, TItem, TCollection> conj)
-            where TCollection : IEnumerable<TItem>
+        public static IAsyncSeq<T> AsAsync<T>(this ISeq<T> seq)
         {
-            return items => new DelegateSeq<TItem, TCollection>(collFactory(items), first, conj);
+            return new AsyncWrapper<T>(seq);
         }
 
-        private class DelegateSeq<TItem, TCollection> : ISeq<TItem> where TCollection : IEnumerable<TItem>
+        private class AsyncWrapper<T> : IAsyncSeq<T>
         {
-            private readonly Func<TCollection, TItem> first;
-            private readonly Func<TCollection, TItem, TCollection> conj;
-            private TCollection items;
+            private readonly ISeq<T> innerSeq;
 
-            public DelegateSeq(TCollection items, Func<TCollection, TItem> first, Func<TCollection, TItem, TCollection> conj)
+            public AsyncWrapper(ISeq<T> seq)
             {
-                this.first = first;
-                this.conj = conj;
-                this.items = items;
+                this.innerSeq = seq;
             }
 
-            public ISeq<TItem> Conj(TItem item)
+            public Task<TakeResult<T>> TakeAsync(CancellationToken cancellationToken)
             {
-                items = conj(items, item);
-                return this;
+                return Task.FromResult(Take());
             }
 
-            public TItem First()
+            public Task<IAsyncSeq<T>> ConjAsync(T item, CancellationToken cancellationToken)
             {
-                return first(items);
+                var resultSeq = Conj(item) as IAsyncSeq<T>;
+                return Task.FromResult(resultSeq);
             }
 
-            public IEnumerator<TItem> GetEnumerator()
+            public TakeResult<T> Take()
             {
-                return items.GetEnumerator();
+                var result = innerSeq.Take();
+
+                // If the inner seq is immutable, we need to return a new wrapper
+                var rest = (result.Rest == innerSeq) ? this : new AsyncWrapper<T>(result.Rest);
+
+                return new TakeResult<T>(result.First, rest);
+            }
+
+            public ISeq<T> Conj(T item)
+            {
+                var result = innerSeq.Conj(item);
+
+                // If the inner seq is immutable, we need to return a new wrapper
+                return (result == innerSeq) ? this : new AsyncWrapper<T>(result);
+            }
+
+            public IEnumerator<T> GetEnumerator()
+            {
+                return innerSeq.GetEnumerator();
             }
 
             IEnumerator IEnumerable.GetEnumerator()
             {
-                return items.GetEnumerator();
+                return innerSeq.GetEnumerator();
             }
         }
     }
