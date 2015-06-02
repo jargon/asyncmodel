@@ -25,6 +25,28 @@ namespace Async.Model.UnitTest
                 masterCancellationToken: CancellationToken.None);
 
             loader.LoadAsync();
+
+
+            Assert.That(loader.ToList(), Is.Empty);
+        }
+
+        [Test]
+        public void CanEnumerateLoadedItems()
+        {
+            var loadedItems = new[] { 1, 2, 3 };
+
+            var loader = new AsyncLoader<int>(
+                seqFactory: Seq.ListBased,
+                loadDataAsync: t => Task.FromResult(loadedItems.AsEnumerable()),
+                fetchUpdatesAsync: null,
+                masterCancellationToken: CancellationToken.None);
+            IEnumerable<int> values = loader;
+
+
+            loader.LoadAsync();  // --- Perform ---
+
+
+            Assert.That(loader, Is.EqualTo(loadedItems));
         }
 
         /// <summary>
@@ -51,6 +73,27 @@ namespace Async.Model.UnitTest
         }
 
         [Test]
+        public void CollectionChangedHandlerInvokedForLoadOfInts()
+        {
+            var loadedItems = new[] { 1, 2, 3 };
+
+            var loader = new AsyncLoader<int>(
+                seqFactory: Seq.ListBased,
+                loadDataAsync: t => Task.FromResult(loadedItems.AsEnumerable()),
+                fetchUpdatesAsync: null,
+                masterCancellationToken: CancellationToken.None);
+
+            var listener = Substitute.For<CollectionChangedHandler<int>>();
+            loader.CollectionChanged += listener;
+
+
+            loader.LoadAsync();  // --- Perform ---
+
+
+            listener.Received().Invoke(Arg.Any<object>(), Arg.Any<IEnumerable<ItemChange<int>>>());
+        }
+
+        [Test]
         public void CollectionChangeHandlerInvokedForLoad()
         {
             IEnumerable<Item> loadedItems = new[] { new Item(), new Item() };
@@ -65,6 +108,7 @@ namespace Async.Model.UnitTest
             IAsyncCollection<IItem> externalView = loader;
 
             var listener = Substitute.For<CollectionChangedHandler<IItem>>();
+            externalView.CollectionChanged += listener;
 
 
             loader.LoadAsync();  // --- Perform ---
@@ -100,6 +144,20 @@ namespace Async.Model.UnitTest
         {
             var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None);
             loader.Conj(1);
+        }
+
+        [Test]
+        public void CollectionChangedHandlerInvokedForConj()
+        {
+            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None);
+            var listener = Substitute.For<CollectionChangedHandler<int>>();
+            loader.CollectionChanged += listener;
+
+
+            loader.Conj(1);  // --- Perform ---
+
+
+            listener.Received().Invoke(Arg.Any<object>(), Arg.Any<IEnumerable<ItemChange<int>>>());
         }
     }
 }
