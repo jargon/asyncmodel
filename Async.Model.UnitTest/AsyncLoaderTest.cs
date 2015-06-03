@@ -9,6 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Tasks.Schedulers;
 
 namespace Async.Model.UnitTest
 {
@@ -81,7 +82,8 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems.AsEnumerable()),
                 fetchUpdatesAsync: null,
-                masterCancellationToken: CancellationToken.None);
+                masterCancellationToken: CancellationToken.None,
+                eventScheduler: new CurrentThreadTaskScheduler());
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -90,7 +92,7 @@ namespace Async.Model.UnitTest
             loader.LoadAsync();  // --- Perform ---
 
 
-            listener.Received().Invoke(Arg.Any<object>(), Arg.Any<IEnumerable<ItemChange<int>>>());
+            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<int>>>(c => c.WasAdded(loadedItems)));
         }
 
         [Test]
@@ -102,7 +104,8 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems),
                 fetchUpdatesAsync: null,
-                masterCancellationToken: CancellationToken.None);
+                masterCancellationToken: CancellationToken.None,
+                eventScheduler: new CurrentThreadTaskScheduler());
 
             // Simulate an external consumer of this collection
             IAsyncCollection<IItem> externalView = loader;
@@ -114,13 +117,7 @@ namespace Async.Model.UnitTest
             loader.LoadAsync();  // --- Perform ---
 
 
-            IEnumerable<ItemChange<IItem>> expectedChanges = new[]
-            {
-                new ItemChange<IItem>(ChangeType.Added, loadedItems.ElementAt(0)),
-                new ItemChange<IItem>(ChangeType.Added, loadedItems.ElementAt(1))
-            };
-
-            listener.Received().Invoke(loader, expectedChanges);
+            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<Item>>>(c => c.WasAdded(loadedItems)));
         }
 
         interface IRoot { }
@@ -149,7 +146,7 @@ namespace Async.Model.UnitTest
         [Test]
         public void CollectionChangedHandlerInvokedForConj()
         {
-            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None);
+            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None, eventScheduler: new CurrentThreadTaskScheduler());
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
 
@@ -157,7 +154,24 @@ namespace Async.Model.UnitTest
             loader.Conj(1);  // --- Perform ---
 
 
-            listener.Received().Invoke(Arg.Any<object>(), Arg.Any<IEnumerable<ItemChange<int>>>());
+            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<int>>>(c => c.Single().WasAdded(1)));
         }
+
+        [Test]
+        public async Task CollectionChangedHandlerInvokedForConjAsync()
+        {
+            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None, eventScheduler: new CurrentThreadTaskScheduler());
+            var listener = Substitute.For<CollectionChangedHandler<int>>();
+            loader.CollectionChanged += listener;
+
+
+            await loader.ConjAsync(1, CancellationToken.None);  // --- Perform ---
+
+
+            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<int>>>(c => c.Single().WasAdded(1)));
+        }
+
+        // A smart trick for unit testing - use SpinWait.SpinUntil
+        // See: http://blogs.msdn.com/b/pfxteam/archive/2011/02/15/10129633.aspx
     }
 }

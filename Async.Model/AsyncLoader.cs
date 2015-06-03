@@ -42,7 +42,8 @@ namespace Async.Model
             Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory,
             Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync,
-            CancellationToken masterCancellationToken) : base(masterCancellationToken)
+            CancellationToken masterCancellationToken,
+            TaskScheduler eventScheduler = null) : base(eventScheduler, masterCancellationToken)
         {
             this.loadDataAsync = loadDataAsync;
             this.fetchUpdatesAsync = fetchUpdatesAsync;
