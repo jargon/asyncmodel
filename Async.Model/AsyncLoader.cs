@@ -18,12 +18,11 @@ namespace Async.Model
         private readonly Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync;
         private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
 
-        private IAsyncSeq<TItem> seq;
+        private readonly IAsyncSeq<TItem> seq;
 
 
         // Events
 
-        public event CollectionResetHandler CollectionReset;
         public event CollectionChangedHandler<TItem> CollectionChanged
         {
             add
@@ -71,15 +70,14 @@ namespace Async.Model
             if (fetchUpdatesAsync == null)
                 return;
 
-            IAsyncSeq<TItem> localSeq = ReadSeqWithLock();
-            PerformAsyncOperation(token => fetchUpdatesAsync(localSeq, token), PerformUpdatesInsideLock);
+            PerformAsyncOperation(token => fetchUpdatesAsync(seq, token), PerformUpdatesInsideLock);
         }
         #endregion
 
         #region IAsyncSeq API
         public IEnumerator<TItem> GetEnumerator()
         {
-            return ReadSeqWithLock().GetEnumerator();
+            return seq.GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -87,61 +85,45 @@ namespace Async.Model
             return this.GetEnumerator();
         }
 
-        public TakeResult<TItem> Take()
+        public TItem Take()
         {
-            TakeResult<TItem> take;
+            var item = seq.Take();
 
-            using (mutex.Lock())
-            {
-                take = seq.Take();
-                seq = take.Rest as IAsyncSeq<TItem>;
-            }
-
-            NotifyCollectionChanged(ChangeType.Removed, take.First);
-            return new TakeResult<TItem>(take.First, this);
+            NotifyCollectionChanged(ChangeType.Removed, item);
+            return item;
         }
 
-        public ISeq<TItem> Conj(TItem item)
+        public void Conj(TItem item)
         {
-            IAsyncSeq<TItem> resultSeq;
-            using (mutex.Lock())
-            {
-                resultSeq = seq.Conj(item) as IAsyncSeq<TItem>;
-                seq = resultSeq;
-            }
+            seq.Conj(item);
 
             NotifyCollectionChanged(ChangeType.Added, item);
-            return this;
         }
 
-        public async Task<TakeResult<TItem>> TakeAsync(CancellationToken cancellationToken)
+        public void ReplaceAll(IEnumerable<TItem> newItems)
+        {
+            throw new NotSupportedException("AsyncLoader does not support ReplaceAll");
+        }
+
+        public async Task<TItem> TakeAsync(CancellationToken cancellationToken)
         {
             // Support cancellation from 3 sources: the master token given at construction, the Cancel method, the token given to this method
             var lcs = CancellationTokenSource.CreateLinkedTokenSource(masterCancellationSource.Token, cancellationToken);
 
-            TakeResult<TItem> take;
-            using (await mutex.LockAsync(lcs.Token))
-            {
-                take = await seq.TakeAsync(lcs.Token);
-                seq = take.Rest as IAsyncSeq<TItem>;
-            }
+            var item = await seq.TakeAsync(lcs.Token);
 
-            NotifyCollectionChanged(ChangeType.Removed, take.First);
-            return new TakeResult<TItem>(take.First, this);
+            NotifyCollectionChanged(ChangeType.Removed, item);
+            return item;
         }
 
-        public async Task<IAsyncSeq<TItem>> ConjAsync(TItem item, CancellationToken cancellationToken)
+        public async Task ConjAsync(TItem item, CancellationToken cancellationToken)
         {
             // Support cancellation from 3 sources: the master token given at construction, the Cancel method, the token given to this method
             var lcs = CancellationTokenSource.CreateLinkedTokenSource(masterCancellationSource.Token, cancellationToken);
 
-            using (await mutex.LockAsync(lcs.Token))
-            {
-                seq = await seq.ConjAsync(item, lcs.Token);
-            }
+            await seq.ConjAsync(item, lcs.Token);
 
             NotifyCollectionChanged(ChangeType.Added, item);
-            return this;
         }
         #endregion
 
@@ -154,7 +136,7 @@ namespace Async.Model
 
             // Replace items wholesale
             // TODO: Items manually inserted via Conj should not be replaced here
-            seq = seqFactory(loadedData);
+            seq.ReplaceAll(loadedData);
 
             // All items count as added
             return loadedData.Select(item => new ItemChange<TItem>(ChangeType.Added, item));
@@ -172,7 +154,8 @@ namespace Async.Model
             var newItems = changes
                 .Where(c => c.Type != ChangeType.Removed)
                 .Select(c => c.Item);
-            seq = seqFactory(newItems);
+
+            seq.ReplaceAll(newItems);
 
             // Filter out unchanged items
             return changes.Where(c => c.Type != ChangeType.Unchanged);
@@ -183,14 +166,6 @@ namespace Async.Model
         {
             var changes = new[] { new ItemChange<TItem>(type, item) };
             NotifySpecialOperationCompleted(changes);
-        }
-
-        private IAsyncSeq<TItem> ReadSeqWithLock()
-        {
-            using (mutex.Lock())
-            {
-                return seq;
-            }
         }
     }
 }

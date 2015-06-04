@@ -6,18 +6,6 @@ using System.Threading.Tasks;
 
 namespace Async.Model.Sequence
 {
-    public struct TakeResult<T>
-    {
-        public readonly T First;
-        public readonly ISeq<T> Rest;
-
-        public TakeResult(T item, ISeq<T> seq)
-        {
-            this.First = item;
-            this.Rest = seq;
-        }
-    }
-
     public interface ISeq<T> : IEnumerable<T>
     {
         // TODO: Is it okay to call First on empty seq?
@@ -28,7 +16,7 @@ namespace Async.Model.Sequence
         /// the taken item.
         /// </summary>
         /// <returns>The first element and the rest of the seq.</returns>
-        TakeResult<T> Take();
+        T Take();
 
         /// <summary>
         /// Conjoins the item onto the seq. Where the item is placed depends on the sequence, but should always be the
@@ -37,6 +25,8 @@ namespace Async.Model.Sequence
         /// </summary>
         /// <param name="item"></param>
         /// <returns></returns>
-        ISeq<T> Conj(T item);
+        void Conj(T item);
+
+        void ReplaceAll(IEnumerable<T> newItems);
     }
 }

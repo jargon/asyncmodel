@@ -12,7 +12,6 @@ namespace Async.Model
 
     public interface IAsyncCollection<out T> : IEnumerable<T>, IAsyncLoaded
     {
-        event CollectionResetHandler CollectionReset;
         event CollectionChangedHandler<T> CollectionChanged;
     }
 }

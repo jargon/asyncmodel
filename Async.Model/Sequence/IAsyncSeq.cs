@@ -10,7 +10,7 @@ namespace Async.Model.Sequence
     public interface IAsyncSeq<T> : ISeq<T>
     {
         // TODO: Is it okay to call First on empty seq?
-        Task<TakeResult<T>> TakeAsync(CancellationToken cancellationToken);
-        Task<IAsyncSeq<T>> ConjAsync(T item, CancellationToken cancellationToken);
+        Task<T> TakeAsync(CancellationToken cancellationToken);
+        Task ConjAsync(T item, CancellationToken cancellationToken);
     }
 }
