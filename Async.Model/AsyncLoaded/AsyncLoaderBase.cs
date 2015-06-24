@@ -8,25 +8,27 @@ namespace Async.Model.AsyncLoaded
 {
     public abstract class AsyncLoaderBase<TLoadResult> : IAsyncLoaded
     {
+        /// <summary>The scheduler used for raising events. This ultimately decides which thread the event notification is run on.</summary>
         protected readonly TaskScheduler eventScheduler;
-        protected readonly CancellationTokenSource masterCancellationSource;
 
-        /// <summary>
-        /// A lock that can be taken both synchronously and asynchronously. This lock should always be used when accessing mutable fields.
-        /// </summary>
+        /// <summary>The root cancellation token this loader was initialized with. Allows for grouped cancellation.</summary>
+        protected readonly CancellationToken rootCancellationToken;
+
+        /// <summary>A lock that can be taken both synchronously and asynchronously. This lock should always be used when accessing mutable fields.</summary>
         /// <remarks>An AsyncLock is NOT reentrant, so subclasses must be careful to only take it when it is known to not already be held.</remarks>
         protected readonly AsyncLock mutex = new AsyncLock();
 
-        /// <summary>
-        /// The current status of any asynchronous load or update operation currently running.
-        /// </summary>
+        /// <summary>The current status of any asynchronous load or update operation currently running.</summary>
         /// <remarks>This field must ONLY be accessed whilst holding the mutex lock!</remarks>
         private AsyncStatus status = AsyncStatus.Ready;
 
-        /// <summary>
-        /// If the last asynchronous load or update operation failed, this holds the aggregate exception from the task.
-        /// </summary>
-        private AggregateException exception;
+        /// <summary>Cancellation token source for the currently executing operation. Null when no operation in progress.</summary>
+        /// <remarks>This field must ONLY be accessed whilst holding the mutex lock!</remarks>
+        private CancellationTokenSource currentOperationCancelSource;
+
+        /// <summary>The last started operation. The operation could currently be running or it might have already completed.</summary>
+        /// <remarks>This field must ONLY be accessed whilst holding the mutex lock!</remarks>
+        private TaskCompletionSource lastStartedOperation;
 
         protected AsyncLoaderBase(CancellationToken rootCancellationToken) : this(null, rootCancellationToken) { }
 
@@ -38,7 +40,7 @@ namespace Async.Model.AsyncLoaded
             }
 
             this.eventScheduler = eventScheduler;
-            this.masterCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken);
+            this.rootCancellationToken = rootCancellationToken;
         }
 
         public AsyncStatus Status
@@ -58,7 +60,8 @@ namespace Async.Model.AsyncLoaded
             {
                 using (mutex.Lock())
                 {
-                    return exception;
+                    var operation = lastStartedOperation;
+                    return (operation == null) ? null : operation.Task.Exception;
                 }
             }
         }
@@ -89,30 +92,48 @@ namespace Async.Model.AsyncLoaded
 
         public void Cancel()
         {
-            masterCancellationSource.Cancel();
+            lock (mutex)
+            {
+                if (currentOperationCancelSource != null)
+                    currentOperationCancelSource.Cancel();
+            }
         }
 
-        protected void PerformAsyncOperation<TResult>(Func<CancellationToken, Task<TResult>> asyncOperation, Func<TResult, CancellationToken, TLoadResult> processResult)
+        protected Task PerformAsyncOperation<TResult>(Func<CancellationToken, Task<TResult>> asyncOperation, Func<TResult, CancellationToken, TLoadResult> processResult)
         {
             AsyncStatus oldStatus;
+            TaskCompletionSource overallOperation;
+            CancellationToken cancellationToken;
+
             using (mutex.Lock())
             {
                 // TODO: Should we fail instead of doing nothing? If we fail, it means client code MUST avoid race
                 // conditions, where multiple operations could be attempted at once. If we do nothing, client code may
-                // think an operation has been started, when it has not. 
+                // think an operation has been started, when it has not. Alternatively, we could actually "queue up"
+                // the call by taking advantage of Task.ContinueWith and our new overallOperation task.
                 if (status == AsyncStatus.Loading)
-                    return;
+                    return TaskConstants.Completed;
 
                 oldStatus = status;
+
                 status = AsyncStatus.Loading;
+                lastStartedOperation = overallOperation = new TaskCompletionSource();
+                currentOperationCancelSource = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken);
+
+                cancellationToken = currentOperationCancelSource.Token;
             }
+
             NotifyOperationStarted(oldStatus);
 
-            var cancellationToken = masterCancellationSource.Token;
+            // Start the async operation
+            // NOTE: It is up to the operation to ensure that it is truly asynchronous using async IO or Task.Run as necessary
             var operationTask = asyncOperation(cancellationToken);
 
+            // NOTE: We cannot use OnlyOnRanToCompletion here, since this task will then be cancelled upon failure or
+            // cancellation of operationTask, triggering TaskFailedOrCancelled _for this task_ in addition of triggering
+            // TaskFailedOrCancelled for the original task.
             var processDataTask = operationTask.ContinueWith(task => ProcessResultAndUpdateStatus(task, processResult), cancellationToken,
-                TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
+                TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
 
 
@@ -125,6 +146,8 @@ namespace Async.Model.AsyncLoaded
             processDataTask.ContinueWith(TaskFailedOrCancelled, CancellationToken.None,
                 TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
+
+            return overallOperation.Task;
         }
 
         protected void NotifySpecialOperationCompleted(TLoadResult result)
@@ -144,29 +167,40 @@ namespace Async.Model.AsyncLoaded
 
         private void ProcessResultAndUpdateStatus<TResult>(Task<TResult> operationTask, Func<TResult, CancellationToken, TLoadResult> processResult)
         {
-            Debug.Assert(operationTask.Status == TaskStatus.RanToCompletion);
+            Debug.Assert(operationTask.IsCompleted);
 
-            var cancellationToken = masterCancellationSource.Token;
-            cancellationToken.ThrowIfCancellationRequested();
+            // If the task was cancelled or failed, abort processing
+            if (operationTask.Status != TaskStatus.RanToCompletion)
+                return;
 
-            AsyncStatus oldStatus;
             TLoadResult notificationData;
+            AsyncStatus oldStatus;
 
             using (mutex.Lock())
             {
-                notificationData = processResult(operationTask.Result, cancellationToken);
+                currentOperationCancelSource.Token.ThrowIfCancellationRequested();
+
+                notificationData = processResult(operationTask.Result, currentOperationCancelSource.Token);
 
                 oldStatus = status;
                 Debug.Assert(oldStatus == AsyncStatus.Loading);
 
                 status = AsyncStatus.Ready;
+                lastStartedOperation.SetResult();
+
+                // Perform cleanup
+                currentOperationCancelSource.Dispose();
+                currentOperationCancelSource = null;
             }
 
+            // Report result
             NotifyOperationCompleted(notificationData);
         }
 
         private void TaskFailedOrCancelled(Task previous)
         {
+            Debug.Assert(previous.IsFaulted || previous.IsCanceled);
+
             AsyncStatus oldStatus;
             AsyncStatus newStatus;
             AggregateException locExc;
@@ -177,10 +211,27 @@ namespace Async.Model.AsyncLoaded
                 locExc = previous.Exception;
                 newStatus = previous.IsCanceled ? AsyncStatus.Cancelled : AsyncStatus.Failed;
 
-                exception = locExc;
                 status = newStatus;
+
+                // Need to transition lastStartedOperation inside lock to ensure consistency between Status and Exception/InnerException/Message properties
+                if (newStatus == AsyncStatus.Cancelled)
+                {
+                    // FIXME: This will not propagate the correct token, will that be a problem?
+                    // See: https://github.com/dotnet/roslyn/issues/447
+                    // TODO: Switch to TaskCompletionSource<>.SetCanceled(CancellationToken) when we upgrade to .NET 4.6
+                    lastStartedOperation.SetCanceled();
+                }
+                else
+                {
+                    lastStartedOperation.SetException(locExc.InnerExceptions);
+                }
+
+                // Perform cleanup
+                currentOperationCancelSource.Dispose();
+                currentOperationCancelSource = null;
             }
 
+            // Report result
             NotifyOperationFailedOrCancelled(oldStatus, newStatus, locExc);
         }
 
@@ -200,7 +251,7 @@ namespace Async.Model.AsyncLoaded
             Task.Factory.StartNew(() =>
             {
                 statusChangeHandler(this, new AsyncStatusTransition(oldStatus, AsyncStatus.Loading));
-            });
+            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
         }
 
         private void NotifyOperationCompleted(TLoadResult notifData)

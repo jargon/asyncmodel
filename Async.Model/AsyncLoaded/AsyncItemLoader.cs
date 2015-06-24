@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Async.Model.AsyncLoaded
 {
-    public sealed class AsyncItemLoader<T> : AsyncLoaderBase<T>, IAsyncItem<T>
+    public sealed class AsyncItemLoader<T> : AsyncLoaderBase<T>, IAsyncItemLoader<T>
     {
         private readonly Func<CancellationToken, Task<T>> loadAsync;
         private readonly Func<T, CancellationToken, Task<T>> updateAsync;
@@ -47,15 +47,15 @@ namespace Async.Model.AsyncLoaded
             this.updateAsync = updateAsync;
         }
 
-        public void LoadAsync()
+        public Task LoadAsync()
         {
-            PerformAsyncOperation(loadAsync, ProcessItemUnderLock);
+            return PerformAsyncOperation(loadAsync, ProcessItemUnderLock);
         }
 
-        public void UpdateAsync()
+        public Task UpdateAsync()
         {
             var it = Item;  // read under lock
-            PerformAsyncOperation(token => updateAsync(it, token), ProcessItemUnderLock);
+            return PerformAsyncOperation(token => updateAsync(it, token), ProcessItemUnderLock);
         }
 
         private T ProcessItemUnderLock(T item, CancellationToken cancellationToken)

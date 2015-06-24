@@ -8,14 +8,14 @@ namespace Async.Model.Sequence
 {
     public interface ISeq<T> : IEnumerable<T>
     {
-        // TODO: Is it okay to call First on empty seq?
+        // TODO: Is it okay to call Take on empty seq?
         /// <summary>
         /// Takes the "front" item of the sequence. What item that is depends on the seq, but should always be the
         /// "natural" element. For a list-based sequence this would mean the first item in the list, whereas for a
-        /// queue-based seq, it should mean a dequeue operation. The result is the taken item along with the seq less
-        /// the taken item.
+        /// queue-based seq, it should mean a dequeue operation. After this operation, the seq will no longer contain
+        /// the item.
         /// </summary>
-        /// <returns>The first element and the rest of the seq.</returns>
+        /// <returns>The first item of the seq.</returns>
         T Take();
 
         /// <summary>
@@ -23,10 +23,15 @@ namespace Async.Model.Sequence
         /// "natural" position. For a list-based seq, this would mean at the end of the list, whereas for a queue-based
         /// seq, the item should be enqueued.
         /// </summary>
-        /// <param name="item"></param>
-        /// <returns></returns>
+        /// <param name="item">Item to add to the seq.</param>
         void Conj(T item);
 
+        /// <summary>
+        /// Replaces all items in the sequence with the given new items. This has the same effect as iterating through
+        /// newItems and calling Conj for each item, except possibly more efficient. Also, if the seq is thread-safe,
+        /// this operation is required to be atomic.
+        /// </summary>
+        /// <param name="newItems">New items to replace the existing items in the sequence.</param>
         void ReplaceAll(IEnumerable<T> newItems);
     }
 }

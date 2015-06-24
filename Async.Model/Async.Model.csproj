@@ -36,6 +36,8 @@
   <ItemGroup>
     <Compile Include="AsyncLoaded\AsyncItemLoader.cs" />
     <Compile Include="AsyncLoaded\AsyncLoaderBase.cs" />
+    <Compile Include="AsyncLoaded\IAsyncItemLoader.cs" />
+    <Compile Include="AsyncLoaded\IAsyncCollectionLoader.cs" />
     <Compile Include="AsyncLoader.cs" />
     <Compile Include="IAsyncCollection.cs" />
     <Compile Include="EntityTag.cs" />

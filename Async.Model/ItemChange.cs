@@ -13,5 +13,21 @@
             this.type = type;
             this.item = item;
         }
+
+        public override bool Equals(object obj)
+        {
+            var other = obj as ItemChange<T>;
+            return other != null &&
+                this.type == other.type &&
+                this.item.Equals(other.item);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return type.GetHashCode() + 7 * item.GetHashCode();
+            }
+        }
     }
 }

@@ -1,4 +1,5 @@
-﻿using Async.Model;
+﻿using FluentAssertions;
+using Async.Model;
 using Async.Model.Sequence;
 using NSubstitute;
 using NUnit.Framework;
@@ -10,12 +11,21 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Schedulers;
+using FluentAssertions.Formatting;
+using EnumerableOfIntegerChangesAlias = System.Collections.Generic.IEnumerable<Async.Model.IItemChange<int>>;
 
 namespace Async.Model.UnitTest
 {
     [TestFixture]
     public class AsyncLoaderTest
     {
+        [SetUp]
+        public void BeforeEachTest()
+        {
+            // Match enums using name instead of value, otherwise error messages will only show the numeric value of the enum (useless)
+            FluentAssertions.AssertionOptions.AssertEquivalencyUsing(options => options.ComparingEnumsByName());
+        }
+
         [Test]
         public void CanLoadEmptyList()
         {
@@ -23,7 +33,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: token => Task.FromResult((IEnumerable<string>)new string[] { }),
                 fetchUpdatesAsync: null,
-                masterCancellationToken: CancellationToken.None);
+                rootCancellationToken: CancellationToken.None);
 
             loader.LoadAsync();
 
@@ -40,7 +50,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems.AsEnumerable()),
                 fetchUpdatesAsync: null,
-                masterCancellationToken: CancellationToken.None);
+                rootCancellationToken: CancellationToken.None);
             IEnumerable<int> values = loader;
 
 
@@ -51,7 +61,7 @@ namespace Async.Model.UnitTest
         }
 
         /// <summary>
-        /// This test verifies that the tested class circumvents the issue with normal compiler generated event handler
+        /// This test verifies that the tested class circumvents the issue which normal compiler generated event handler
         /// add/remove methods run into, namely that Delegate.Combine does not support delegates of different generic
         /// types.
         /// </summary>
@@ -63,7 +73,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: null,
                 fetchUpdatesAsync: null,
-                masterCancellationToken: CancellationToken.None);
+                rootCancellationToken: CancellationToken.None);
 
             // Simulate an external consumer of this collection
             IAsyncCollection<IItem> externalView = loader;
@@ -82,7 +92,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems.AsEnumerable()),
                 fetchUpdatesAsync: null,
-                masterCancellationToken: CancellationToken.None,
+                rootCancellationToken: CancellationToken.None,
                 eventScheduler: new CurrentThreadTaskScheduler());
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
@@ -92,11 +102,13 @@ namespace Async.Model.UnitTest
             loader.LoadAsync();  // --- Perform ---
 
 
-            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<int>>>(c => c.WasAdded(loadedItems)));
+            var expectedChanges = loadedItems.Select(i => new ItemChange<int>(ChangeType.Added, i));
+            listener.Received().Invoke(loader, Fluent.Match<EnumerableOfIntegerChangesAlias>(coll =>
+                coll.Should().BeEquivalentTo(expectedChanges)));
         }
 
         [Test]
-        public void CollectionChangeHandlerInvokedForLoad()
+        public void CollectionChangeHandlerInvokedForLoadWithContravariantHandler()
         {
             IEnumerable<Item> loadedItems = new[] { new Item(), new Item() };
 
@@ -104,7 +116,7 @@ namespace Async.Model.UnitTest
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems),
                 fetchUpdatesAsync: null,
-                masterCancellationToken: CancellationToken.None,
+                rootCancellationToken: CancellationToken.None,
                 eventScheduler: new CurrentThreadTaskScheduler());
 
             // Simulate an external consumer of this collection
@@ -117,7 +129,9 @@ namespace Async.Model.UnitTest
             loader.LoadAsync();  // --- Perform ---
 
 
-            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<Item>>>(c => c.WasAdded(loadedItems)));
+            var expectedChanges = loadedItems.Select(item => new ItemChange<Item>(ChangeType.Added, item));
+            listener.Received().Invoke(loader, Fluent.Match<IEnumerable<IItemChange<Item>>>(coll =>
+                coll.Should().BeEquivalentTo(expectedChanges)));
         }
 
         interface IRoot { }
@@ -131,7 +145,7 @@ namespace Async.Model.UnitTest
         [Test]
         public void CanEnumerateWithoutLoadOrUpdate()
         {
-            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None);
+            var loader = new AsyncLoader<int>(Seq.ListBased);
             foreach (var item in loader)
                 Console.WriteLine("Item: " + item);
         }
@@ -139,28 +153,29 @@ namespace Async.Model.UnitTest
         [Test]
         public void CanConjWithoutLoadOrUpdate()
         {
-            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None);
+            var loader = new AsyncLoader<int>(Seq.ListBased);
             loader.Conj(1);
         }
 
         [Test]
         public void CollectionChangedHandlerInvokedForConj()
         {
-            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None, eventScheduler: new CurrentThreadTaskScheduler());
+            var loader = new AsyncLoader<int>(Seq.ListBased, eventScheduler: new CurrentThreadTaskScheduler());
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
 
 
             loader.Conj(1);  // --- Perform ---
 
-
-            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<int>>>(c => c.Single().WasAdded(1)));
+            
+            listener.Received().Invoke(loader, Fluent.Match<EnumerableOfIntegerChangesAlias>(changes =>
+                changes.Should().ContainSingle().Which.ShouldBeEquivalentTo(new ItemChange<int>(ChangeType.Added, 1))));
         }
 
         [Test]
         public async Task CollectionChangedHandlerInvokedForConjAsync()
         {
-            var loader = new AsyncLoader<int>(Seq.ListBased, null, null, CancellationToken.None, eventScheduler: new CurrentThreadTaskScheduler());
+            var loader = new AsyncLoader<int>(Seq.ListBased, eventScheduler: new CurrentThreadTaskScheduler());
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
 
@@ -168,7 +183,46 @@ namespace Async.Model.UnitTest
             await loader.ConjAsync(1, CancellationToken.None);  // --- Perform ---
 
 
-            listener.Received().Invoke(loader, Arg.Is<IEnumerable<IItemChange<int>>>(c => c.Single().WasAdded(1)));
+            listener.Received().Invoke(loader, Fluent.Match<EnumerableOfIntegerChangesAlias>(changes =>
+                changes.Should().ContainSingle().Which.ShouldBeEquivalentTo(new ItemChange<int>(ChangeType.Added, 1))));
+        }
+
+        [Test]
+        public void CollectionChangedHandlerInvokedForTake()
+        {
+            IEnumerable<int> loadedInts = new[] { 42 };
+            var loader = new AsyncLoader<int>(Seq.ListBased, loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventScheduler: new CurrentThreadTaskScheduler());
+            loader.LoadAsync();
+
+            var listener = Substitute.For<CollectionChangedHandler<int>>();
+            loader.CollectionChanged += listener;
+
+
+            loader.Take();  // --- Perform ---
+
+
+            listener.Received().Invoke(loader, Fluent.Match<EnumerableOfIntegerChangesAlias>(changes =>
+                changes.Should().ContainSingle().Which.ShouldBeEquivalentTo(new ItemChange<int>(ChangeType.Removed, 42))));
+        }
+
+        [Test]
+        public async Task CollectionChangedHandlerInvokedForTakeAsync()
+        {
+            IEnumerable<int> loadedInts = new[] { 35 };
+            var loader = new AsyncLoader<int>(Seq.ListBased, loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventScheduler: new CurrentThreadTaskScheduler());
+            loader.LoadAsync();
+
+            var listener = Substitute.For<CollectionChangedHandler<int>>();
+            loader.CollectionChanged += listener;
+
+
+            await loader.TakeAsync(CancellationToken.None);  // --- Perform ---
+
+
+            listener.Received().Invoke(loader, Fluent.Match<EnumerableOfIntegerChangesAlias>(changes =>
+                changes.Should().ContainSingle().Which.ShouldBeEquivalentTo(new ItemChange<int>(ChangeType.Removed, 35))));
         }
 
         // A smart trick for unit testing - use SpinWait.SpinUntil

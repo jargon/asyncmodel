@@ -10,10 +10,8 @@ using System.Threading.Tasks;
 
 namespace Async.Model
 {
-    public sealed class AsyncLoader<TItem> : AsyncLoaderBase<IEnumerable<ItemChange<TItem>>>, IAsyncCollection<TItem>, IAsyncSeq<TItem>
+    public sealed class AsyncLoader<TItem> : AsyncLoaderBase<IEnumerable<ItemChange<TItem>>>, IAsyncCollectionLoader<TItem>
     {
-        // Fields
-
         private readonly Func<IEnumerable<TItem>, IAsyncSeq<TItem>> seqFactory;
         private readonly Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync;
         private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
@@ -21,28 +19,12 @@ namespace Async.Model
         private readonly IAsyncSeq<TItem> seq;
 
 
-        // Events
-
-        public event CollectionChangedHandler<TItem> CollectionChanged
-        {
-            add
-            {
-                AsyncOperationCompleted += (s, e) => value(s, e);
-            }
-            remove
-            {
-            }
-        }
-        
-
-        // Members
-
         public AsyncLoader(
             Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory,
-            Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync,
-            Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync,
-            CancellationToken masterCancellationToken,
-            TaskScheduler eventScheduler = null) : base(eventScheduler, masterCancellationToken)
+            Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync = null,
+            Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync = null,
+            CancellationToken rootCancellationToken = default(CancellationToken),
+            TaskScheduler eventScheduler = null) : base(eventScheduler, rootCancellationToken)
         {
             this.loadDataAsync = loadDataAsync;
             this.fetchUpdatesAsync = fetchUpdatesAsync;
@@ -56,7 +38,20 @@ namespace Async.Model
             this.seq = asyncSeqFactory(Enumerable.Empty<TItem>());
         }
 
-        #region IAsyncCollection API
+        #region IAsyncCollectionLoader API
+        public event CollectionChangedHandler<TItem> CollectionChanged
+        {
+            add
+            {
+                // TODO: Should add weak event handler here to prevent leaks
+                // NOTE: Cannot simply add given event handler, since it uses a specialized delegate
+                AsyncOperationCompleted += (s, e) => value(s, e);
+            }
+            remove
+            {
+            }
+        }
+        
         public void LoadAsync()
         {
             if (loadDataAsync == null)
@@ -107,23 +102,23 @@ namespace Async.Model
 
         public async Task<TItem> TakeAsync(CancellationToken cancellationToken)
         {
-            // Support cancellation from 3 sources: the master token given at construction, the Cancel method, the token given to this method
-            var lcs = CancellationTokenSource.CreateLinkedTokenSource(masterCancellationSource.Token, cancellationToken);
+            using (var lcs = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken, cancellationToken))
+            {
+                var item = await seq.TakeAsync(lcs.Token);
 
-            var item = await seq.TakeAsync(lcs.Token);
-
-            NotifyCollectionChanged(ChangeType.Removed, item);
-            return item;
+                NotifyCollectionChanged(ChangeType.Removed, item);
+                return item;
+            }
         }
 
         public async Task ConjAsync(TItem item, CancellationToken cancellationToken)
         {
-            // Support cancellation from 3 sources: the master token given at construction, the Cancel method, the token given to this method
-            var lcs = CancellationTokenSource.CreateLinkedTokenSource(masterCancellationSource.Token, cancellationToken);
+            using (var lcs = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken, cancellationToken))
+            {
+                await seq.ConjAsync(item, lcs.Token);
 
-            await seq.ConjAsync(item, lcs.Token);
-
-            NotifyCollectionChanged(ChangeType.Added, item);
+                NotifyCollectionChanged(ChangeType.Added, item);
+            }
         }
         #endregion
 
