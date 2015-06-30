@@ -27,7 +27,7 @@ namespace Async.Model
         }
 
         internal static IEnumerable<TResult> FullOuterJoinIterator<TLeft, TRight, TKey, TResult>(
-            this IEnumerable<TLeft> left,
+            IEnumerable<TLeft> left,
             IEnumerable<TRight> right,
             Func<TLeft, TKey> leftKeySelector,
             Func<TRight, TKey> rightKeySelector,
@@ -44,6 +44,43 @@ namespace Async.Model
                 foreach (var leftValue in leftLookup[key].DefaultIfEmpty(defaultLeft))
                     foreach (var rightValue in rightLookup[key].DefaultIfEmpty(defaultRight))
                         yield return resultSelector(leftValue, rightValue, key);
+        }
+
+        public static IEnumerable<ItemChange<TKey>> ChangesFrom<TNew, TOld, TKey>(
+            this IEnumerable<TNew> newItems,
+            IEnumerable<TOld> oldItems,
+            Func<TNew, TKey> newItemKeySelector,
+            Func<TOld, TKey> oldItemKeySelector,
+            IEqualityComparer<TKey> identityComparer = null,
+            IEqualityComparer<TKey> updateComparer = null)
+            where TNew : class
+            where TOld : class
+            where TKey : class
+        {
+            if (newItems == null) throw new ArgumentNullException("newItems");
+            if (oldItems == null) throw new ArgumentNullException("oldItems");
+            if (newItemKeySelector == null) throw new ArgumentNullException("newItemKeySelector");
+            if (oldItemKeySelector == null) throw new ArgumentNullException("oldItemKeySelector");
+
+            identityComparer = identityComparer ?? EqualityComparer<TKey>.Default;
+            updateComparer = updateComparer ?? EqualityComparer<TKey>.Default;
+
+            return newItems.FullOuterJoin(oldItems, newItemKeySelector, oldItemKeySelector, (n, o, k) =>
+            {
+                if (n == null)
+                    return new ItemChange<TKey>(ChangeType.Removed, k);
+                else if (o == null)
+                    return new ItemChange<TKey>(ChangeType.Added, k);
+
+                var newKey = newItemKeySelector(n);
+                var oldKey = oldItemKeySelector(o);
+
+                if (newKey != oldKey && !updateComparer.Equals(newKey, oldKey))
+                    return new ItemChange<TKey>(ChangeType.Updated, newItemKeySelector(n));
+
+                return new ItemChange<TKey>(ChangeType.Unchanged, newKey);
+
+            }, identityComparer);
         }
     }
 }

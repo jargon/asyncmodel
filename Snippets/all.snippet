@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<CodeSnippets
+    xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet">
+  <CodeSnippet Format="1.0.0">
+    <Header>
+      <SnippetTypes>
+        <SnippetType>Expansion</SnippetType>
+      </SnippetTypes>
+      <Title>Single Line Summary</Title>
+      <Description>Inserts an XML doc summary comment as a single line instead of the usual multi-line summary. Useful for short member descriptions.</Description>
+      <Shortcut>summary</Shortcut>
+    </Header>
+    <Snippet>
+      <Code Language="CSharp">
+        <![CDATA[/// <summary>$end$</summary>]]>
+      </Code>
+    </Snippet>
+  </CodeSnippet>
+  <CodeSnippet Format="1.0.0">
+    <Header>
+      <SnippetTypes>
+        <SnippetType>Expansion</SnippetType>
+      </SnippetTypes>
+      <Title>Arg.Any</Title>
+      <Description>Inserts a call to NSubstitute Arg.Any method.</Description>
+      <Shortcut>argany</Shortcut>
+    </Header>
+    <Snippet>
+      <Declarations>
+        <Object>
+          <ID>genericType</ID>
+          <Type>System.Type</Type>
+          <Default>object</Default>
+        </Object>
+      </Declarations>
+      <Code Language="CSharp">
+        <![CDATA[Arg.Any<$genericType$>()$end$]]>
+      </Code>
+    </Snippet>
+  </CodeSnippet>
+</CodeSnippets>

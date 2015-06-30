@@ -34,9 +34,15 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="AsyncLoaded\AsyncItemLoader.cs" />
+    <Compile Include="AsyncLoaded\AsyncLoaderBase.cs" />
+    <Compile Include="AsyncLoaded\IAsyncItemLoader.cs" />
+    <Compile Include="AsyncLoaded\IAsyncCollectionLoader.cs" />
     <Compile Include="AsyncLoader.cs" />
     <Compile Include="IAsyncCollection.cs" />
     <Compile Include="EntityTag.cs" />
+    <Compile Include="AsyncLoaded\IAsyncItem.cs" />
+    <Compile Include="AsyncLoaded\IAsyncLoaded.cs" />
     <Compile Include="IItemChange.cs" />
     <Compile Include="ItemChange.cs" />
     <Compile Include="LinqExtensions.cs" />
@@ -46,6 +52,10 @@
     <Compile Include="Sequence\Seq.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="Nito.AsyncEx, Version=3.0.1.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Nito.AsyncEx.3.0.1-pre\lib\portable-net45+netcore45+wp8+wpa81\Nito.AsyncEx.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System.Collections.Immutable, Version=1.1.36.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Collections.Immutable.1.1.36\lib\portable-net45+win8+wp8+wpa81\System.Collections.Immutable.dll</HintPath>
       <Private>True</Private>
