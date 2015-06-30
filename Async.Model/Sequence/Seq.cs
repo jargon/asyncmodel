@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Nito.AsyncEx;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,20 +22,28 @@ namespace Async.Model.Sequence
 
             public ListSeq(List<T> list)
             {
+                if (list == null)
+                    throw new ArgumentNullException("list");
+
                 this.list = list;
             }
 
-            public ISeq<T> Conj(T item)
+            public void Conj(T item)
             {
                 list.Add(item);
-                return this;
             }
 
-            public TakeResult<T> Take()
+            public T Take()
             {
                 var item = list[0];
                 list.RemoveAt(0);
-                return new TakeResult<T>(item, this);
+                return item;
+            }
+
+            public void ReplaceAll(IEnumerable<T> newItems)
+            {
+                list.Clear();
+                list.AddRange(newItems);
             }
 
             public IEnumerator<T> GetEnumerator()
@@ -55,22 +64,29 @@ namespace Async.Model.Sequence
 
         private class QueueSeq<T> : ISeq<T>
         {
-            private readonly Queue<T> queue;
+            private Queue<T> queue;
 
             public QueueSeq(Queue<T> queue)
             {
+                if (queue == null)
+                    throw new ArgumentNullException("queue");
+
                 this.queue = queue;
             }
 
-            public ISeq<T> Conj(T item)
+            public void Conj(T item)
             {
                 queue.Enqueue(item);
-                return this;
             }
 
-            public TakeResult<T> Take()
+            public T Take()
             {
-                return new TakeResult<T>(queue.Dequeue(), this);
+                return queue.Dequeue();
+            }
+
+            public void ReplaceAll(IEnumerable<T> newItems)
+            {
+                this.queue = new Queue<T>(newItems);
             }
 
             public IEnumerator<T> GetEnumerator()
@@ -95,36 +111,36 @@ namespace Async.Model.Sequence
 
             public AsyncWrapper(ISeq<T> seq)
             {
+                if (seq == null)
+                    throw new ArgumentNullException("seq");
+
                 this.innerSeq = seq;
             }
 
-            public Task<TakeResult<T>> TakeAsync(CancellationToken cancellationToken)
+            public Task<T> TakeAsync(CancellationToken cancellationToken)
             {
                 return Task.FromResult(Take());
             }
 
-            public Task<IAsyncSeq<T>> ConjAsync(T item, CancellationToken cancellationToken)
+            public Task ConjAsync(T item, CancellationToken cancellationToken)
             {
-                var resultSeq = Conj(item) as IAsyncSeq<T>;
-                return Task.FromResult(resultSeq);
+                Conj(item);
+                return TaskConstants.Completed;
             }
 
-            public TakeResult<T> Take()
+            public T Take()
             {
-                var result = innerSeq.Take();
-
-                // If the inner seq is immutable, we need to return a new wrapper
-                var rest = (result.Rest == innerSeq) ? this : new AsyncWrapper<T>(result.Rest);
-
-                return new TakeResult<T>(result.First, rest);
+                return innerSeq.Take();
             }
 
-            public ISeq<T> Conj(T item)
+            public void Conj(T item)
             {
-                var result = innerSeq.Conj(item);
+                innerSeq.Conj(item);
+            }
 
-                // If the inner seq is immutable, we need to return a new wrapper
-                return (result == innerSeq) ? this : new AsyncWrapper<T>(result);
+            public void ReplaceAll(IEnumerable<T> newItems)
+            {
+                innerSeq.ReplaceAll(newItems);
             }
 
             public IEnumerator<T> GetEnumerator()
