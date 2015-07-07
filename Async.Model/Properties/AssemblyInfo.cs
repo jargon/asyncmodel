@@ -1,17 +1,13 @@
-﻿using System.Resources;
-using System.Reflection;
+﻿using System.Reflection;
+using System.Resources;
 
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("Async.Model")]
-[assembly: AssemblyDescription("")]
-[assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("Async.Model")]
+[assembly: AssemblyTitle("Async.Model")]
+[assembly: AssemblyDescription("Building blocks for asynchronous domain models.")]
 [assembly: AssemblyCopyright("Copyright © Søren Nguyen Boisen 2015")]
-[assembly: AssemblyTrademark("")]
-[assembly: AssemblyCulture("")]
 [assembly: NeutralResourcesLanguage("en")]
 
 // Version information for an assembly consists of the following four values:
@@ -25,4 +21,7 @@ using System.Reflection;
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
 [assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+
+// This is needed for specifying NuGet package version since AssemblyVersion does
+// not support semantic versioning.
+[assembly: AssemblyInformationalVersion("1.0.0-beta1")]
