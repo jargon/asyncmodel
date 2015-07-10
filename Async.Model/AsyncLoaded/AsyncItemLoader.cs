@@ -1,13 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Async.Model.AsyncLoaded
 {
-    public sealed class AsyncItemLoader<T> : AsyncLoaderBase<T>, IAsyncItemLoader<T>
+    public sealed class AsyncItemLoader<T> : AsyncLoaderBase<Tuple<T, T>>, IAsyncItemLoader<T>
     {
         private readonly Func<CancellationToken, Task<T>> loadAsync;
         private readonly Func<T, CancellationToken, Task<T>> updateAsync;
@@ -30,9 +27,9 @@ namespace Async.Model.AsyncLoaded
             add
             {
                 // TODO: Should add weak event handler here to prevent leaks
-                // Simply forward to the internal operation completed event
-                // NOTE: Cannot simply add given event handler, since it uses a specialized delegate
-                AsyncOperationCompleted += (s, e) => value(s, e);
+                // Forward to the internal operation completed event
+                // NOTE: e is a Tuple where Item1 is old item and Item2 is new item, see method ProcessItemUnderLock below
+                AsyncOperationCompleted += (s, e) => value(s, e.Item1, e.Item2);
             }
             remove
             {
@@ -58,10 +55,12 @@ namespace Async.Model.AsyncLoaded
             return PerformAsyncOperation(token => updateAsync(it, token), ProcessItemUnderLock);
         }
 
-        private T ProcessItemUnderLock(T item, CancellationToken cancellationToken)
+        private Tuple<T, T> ProcessItemUnderLock(T newItem, CancellationToken cancellationToken)
         {
-            this.item = item;
-            return item;
+            var oldItem = this.item;
+            this.item = newItem;
+
+            return Tuple.Create(oldItem, newItem);
         }
     }
 }
