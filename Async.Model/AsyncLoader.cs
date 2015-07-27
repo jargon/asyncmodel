@@ -10,13 +10,13 @@ using System.Threading.Tasks;
 
 namespace Async.Model
 {
-    public sealed class AsyncLoader<TItem> : AsyncLoaderBase<IEnumerable<ItemChange<TItem>>>, IAsyncCollectionLoader<TItem>
+    public class AsyncLoader<TItem> : AsyncLoaderBase<IEnumerable<ItemChange<TItem>>>, IAsyncCollectionLoader<TItem>
     {
         private readonly Func<IEnumerable<TItem>, IAsyncSeq<TItem>> seqFactory;
         private readonly Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync;
         private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
 
-        private readonly IAsyncSeq<TItem> seq;
+        protected readonly IAsyncSeq<TItem> seq;
 
 
         public AsyncLoader(
@@ -52,12 +52,28 @@ namespace Async.Model
             }
         }
         
+        /// <summary>
+        /// Performs an asynchronous load using the loadDataAsync function previously given in the constructor. This
+        /// will clear the underlying seq before starting the load operation. This method is intended to be used for
+        /// initial data load. Use UpdateAsync for keeping the loaded data up to date.
+        /// </summary>
+        /// <remarks>
+        /// Note that it is okay to Conj items to the collection while loading. When the loading completes, any items
+        /// in the seq will be concatenated to the loaded items.
+        /// </remarks>
         public void LoadAsync()
         {
             if (loadDataAsync == null)
+            {
+                // We still need to clear the seq under lock
+                using (mutex.Lock())
+                {
+                    seq.Clear();
+                }
                 return;
+            }
 
-            PerformAsyncOperation(loadDataAsync, InsertLoadedDataInsideLock);
+            PerformAsyncOperation(() => seq.Clear(), loadDataAsync, InsertLoadedDataInsideLock);
         }
 
         public void UpdateAsync()
@@ -65,12 +81,12 @@ namespace Async.Model
             if (fetchUpdatesAsync == null)
                 return;
 
-            PerformAsyncOperation(token => fetchUpdatesAsync(seq, token), PerformUpdatesInsideLock);
+            PerformAsyncOperation(() => { }, token => fetchUpdatesAsync(seq, token), PerformUpdatesInsideLock);
         }
         #endregion
 
         #region IAsyncSeq API
-        public IEnumerator<TItem> GetEnumerator()
+        public virtual IEnumerator<TItem> GetEnumerator()
         {
             return seq.GetEnumerator();
         }
@@ -80,7 +96,7 @@ namespace Async.Model
             return this.GetEnumerator();
         }
 
-        public TItem Take()
+        public virtual TItem Take()
         {
             var item = seq.Take();
 
@@ -88,19 +104,24 @@ namespace Async.Model
             return item;
         }
 
-        public void Conj(TItem item)
+        public virtual void Conj(TItem item)
         {
             seq.Conj(item);
 
             NotifyCollectionChanged(ChangeType.Added, item);
         }
 
-        public void ReplaceAll(IEnumerable<TItem> newItems)
+        public virtual void ReplaceAll(IEnumerable<TItem> newItems)
         {
             throw new NotSupportedException("AsyncLoader does not support ReplaceAll");
         }
 
-        public async Task<TItem> TakeAsync(CancellationToken cancellationToken)
+        public virtual void Clear()
+        {
+            throw new NotSupportedException("AsyncLoader does not support Clear");
+        }
+
+        public virtual async Task<TItem> TakeAsync(CancellationToken cancellationToken)
         {
             using (var lcs = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken, cancellationToken))
             {
@@ -111,7 +132,7 @@ namespace Async.Model
             }
         }
 
-        public async Task ConjAsync(TItem item, CancellationToken cancellationToken)
+        public virtual async Task ConjAsync(TItem item, CancellationToken cancellationToken)
         {
             using (var lcs = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken, cancellationToken))
             {
@@ -129,11 +150,11 @@ namespace Async.Model
             // Enumerating loadedData may throw an exception, which will be handled in base class
             loadedData = loadedData.ToArray();
 
-            // Replace items wholesale
-            // TODO: Items manually inserted via Conj should not be replaced here
-            seq.ReplaceAll(loadedData);
+            // Since LoadAsync clears the collection, any items now present in seq has been Conj'ed and should therefore be kept
+            // Need to force eager enumeration of seq (by using ToArray), since ReplaceAll modifies the same seq
+            seq.ReplaceAll(seq.Concat(loadedData).ToArray());
 
-            // All items count as added
+            // Loaded items count as added
             return loadedData.Select(item => new ItemChange<TItem>(ChangeType.Added, item));
         }
 

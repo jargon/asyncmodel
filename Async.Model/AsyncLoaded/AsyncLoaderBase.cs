@@ -99,8 +99,36 @@ namespace Async.Model.AsyncLoaded
             }
         }
 
-        protected Task PerformAsyncOperation<TResult>(Func<CancellationToken, Task<TResult>> asyncOperation, Func<TResult, CancellationToken, TLoadResult> processResult)
+        /// <summary>
+        /// Starts an asynchronous operation if one is not already running and returns a task representing its
+        /// progress. This is the main method subclasses are expected to expose in their own specific ways to clients.
+        /// This method takes care of all the mechanics in regards to updating the status and notifying listeners.
+        /// </summary>
+        /// <typeparam name="TResult">The result type of the operation.</typeparam>
+        /// <param name="prepareOperation">
+        /// An action performed under lock after it has been decided that the operation should proceed (no async
+        /// operation currently in progress).
+        /// </param>
+        /// <param name="asyncOperation">
+        /// The asynchronous operation to perform. It is up to the operation to ensure asynchronous behaviour: this
+        /// method will not attempt to force execution on another thread. This operation is NOT performed under lock.
+        /// </param>
+        /// <param name="processResult">
+        /// A function to perform on the result of the asynchronous operation, unless the operation is cancelled or
+        /// fails. Performed under lock.
+        /// </param>
+        /// <returns>
+        /// A task that will complete when the overall operation including post-processing has completed. Any exception
+        /// encountered by the operation will be propagated to the task and available via the Exception property. If
+        /// the operation is cancelled, the task will reflect this in its Status property.
+        /// </returns>
+        protected Task PerformAsyncOperation<TResult>(
+            Action prepareOperation,
+            Func<CancellationToken, Task<TResult>> asyncOperation,
+            Func<TResult, CancellationToken, TLoadResult> processResult)
         {
+
+            // These all need to be read under lock but used outside lock
             AsyncStatus oldStatus;
             TaskCompletionSource overallOperation;
             CancellationToken cancellationToken;
@@ -119,8 +147,11 @@ namespace Async.Model.AsyncLoaded
                 status = AsyncStatus.Loading;
                 lastStartedOperation = overallOperation = new TaskCompletionSource();
                 currentOperationCancelSource = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken);
-
+                
                 cancellationToken = currentOperationCancelSource.Token;
+
+                // Prepare for operation inside lock _after_ it has been determined that operation should proceed
+                prepareOperation();
             }
 
             NotifyOperationStarted(oldStatus);

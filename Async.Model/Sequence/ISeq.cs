@@ -33,5 +33,10 @@ namespace Async.Model.Sequence
         /// </summary>
         /// <param name="newItems">New items to replace the existing items in the sequence.</param>
         void ReplaceAll(IEnumerable<T> newItems);
+
+        /// <summary>
+        /// Clears the sequence, leaving it empty. If the seq is thread-safe, this operation is required to be atomic.
+        /// </summary>
+        void Clear();
     }
 }
