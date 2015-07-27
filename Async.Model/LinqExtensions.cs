@@ -53,9 +53,6 @@ namespace Async.Model
             Func<TOld, TKey> oldItemKeySelector,
             IEqualityComparer<TKey> identityComparer = null,
             IEqualityComparer<TKey> updateComparer = null)
-            where TNew : class
-            where TOld : class
-            where TKey : class
         {
             if (newItems == null) throw new ArgumentNullException("newItems");
             if (oldItems == null) throw new ArgumentNullException("oldItems");
@@ -75,8 +72,8 @@ namespace Async.Model
                 var newKey = newItemKeySelector(n);
                 var oldKey = oldItemKeySelector(o);
 
-                if (newKey != oldKey && !updateComparer.Equals(newKey, oldKey))
-                    return new ItemChange<TKey>(ChangeType.Updated, newItemKeySelector(n));
+                if (!updateComparer.Equals(newKey, oldKey))
+                    return new ItemChange<TKey>(ChangeType.Updated, newKey);
 
                 return new ItemChange<TKey>(ChangeType.Unchanged, newKey);
 

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Async.Model;
 using Async.Model.Sequence;
 
 namespace Async.Model.AsyncLoaded
@@ -36,12 +37,37 @@ namespace Async.Model.AsyncLoaded
             }
         }
 
+        public override void Replace(TItem newItem)
+        {
+            using (mutex.Lock())
+            {
+                seq.Replace(newItem);
+                NotifyCollectionChanged(ChangeType.Updated, newItem);
+            }
+        }
+
         public override void ReplaceAll(IEnumerable<TItem> newItems)
         {
             using (mutex.Lock())
             {
-                base.ReplaceAll(newItems);
+                seq.ReplaceAll(newItems);
 
+                // TODO: This will generate updates for unchanged items, is this acceptable?
+                var changes = newItems.ChangesFrom(seq, i => i, i => i, EqualityComparer<TItem>.Default, new NeverEqualsComparer<TItem>());
+                NotifySpecialOperationCompleted(changes);
+            }
+        }
+
+        class NeverEqualsComparer<T> : EqualityComparer<T>
+        {
+            public override bool Equals(T x, T y)
+            {
+                return false;
+            }
+
+            public override int GetHashCode(T obj)
+            {
+                return obj.GetHashCode();
             }
         }
 
@@ -49,7 +75,9 @@ namespace Async.Model.AsyncLoaded
         {
             using (mutex.Lock())
             {
-                base.Clear(); 
+                var changes = seq.Select(item => new ItemChange<TItem>(ChangeType.Removed, item)).ToArray();
+                seq.Clear();
+                NotifySpecialOperationCompleted(changes);
             }
         }
 

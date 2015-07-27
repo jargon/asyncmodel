@@ -40,6 +40,16 @@ namespace Async.Model.Sequence
                 return item;
             }
 
+            public void Replace(T item)
+            {
+                int index = list.IndexOf(item);
+
+                if (index == -1)
+                    throw new ArgumentException("Not found: " + item, "item");
+
+                list[index] = item;
+            }
+
             public void ReplaceAll(IEnumerable<T> newItems)
             {
                 list.Clear();
@@ -87,6 +97,31 @@ namespace Async.Model.Sequence
             public T Take()
             {
                 return queue.Dequeue();
+            }
+
+            public void Replace(T item)
+            {
+                // Use the same definition of equality as List<T>.IndexOf
+                var comparer = EqualityComparer<T>.Default;
+                bool found = false;
+
+                var filteredQueue = queue.Select(queueEntry =>
+                {
+                    if (comparer.Equals(queueEntry, item))
+                    {
+                        found = true;
+                        return item;
+                    }
+                    else
+                    {
+                        return queueEntry;
+                    }
+                });
+
+                if (!found)
+                    throw new ArgumentException("Not found: " + item, "item");
+
+                ReplaceAll(filteredQueue);
             }
 
             public void ReplaceAll(IEnumerable<T> newItems)
@@ -146,6 +181,11 @@ namespace Async.Model.Sequence
             public void Conj(T item)
             {
                 innerSeq.Conj(item);
+            }
+
+            public void Replace(T item)
+            {
+                innerSeq.Replace(item);
             }
 
             public void ReplaceAll(IEnumerable<T> newItems)

@@ -216,6 +216,11 @@ namespace Async.Model.UnitTest
                 innerList = innerList.Add(item);
             }
 
+            public void Replace(T item)
+            {
+                innerList = innerList.Replace(item, item);
+            }
+
             public void ReplaceAll(IEnumerable<T> newItems)
             {
                 innerList = newItems.ToImmutableList();

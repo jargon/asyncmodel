@@ -27,6 +27,17 @@ namespace Async.Model.Sequence
         void Conj(T item);
 
         /// <summary>
+        /// Replaces an item in the sequence with the given item. Items are compared by whatever definition of equality
+        /// the seq uses.
+        /// </summary>
+        /// <remarks>
+        /// This method is intended for use with seqs where only a subset of fields are used for equals comparison,
+        /// where it would make sense to use in order to update the remaining fields.
+        /// </remarks>
+        /// <param name="item">The replacement item to use instead of the item in the list that is deemed equal.</param>
+        void Replace(T item);
+
+        /// <summary>
         /// Replaces all items in the sequence with the given new items. This has the same effect as iterating through
         /// newItems and calling Conj for each item, except possibly more efficient. Also, if the seq is thread-safe,
         /// this operation is required to be atomic.
