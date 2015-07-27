@@ -221,6 +221,11 @@ namespace Async.Model.UnitTest
                 innerList = newItems.ToImmutableList();
             }
 
+            public void Clear()
+            {
+                innerList = innerList.Clear();
+            }
+
             public IEnumerator<T> GetEnumerator()
             {
                 return innerList.GetEnumerator();

@@ -536,12 +536,12 @@ namespace Async.Model.UnitTest.AsyncLoaded
 
             public Task PerformAsyncOperation(Func<CancellationToken, Task<bool>> operation)
             {
-                return base.PerformAsyncOperation(operation, (b, c) => b);
+                return base.PerformAsyncOperation(() => { }, operation, (b, c) => b);
             }
 
             public Task PerformAsyncOperation(Func<CancellationToken, Task<bool>> operation, Func<bool, CancellationToken, bool> processResult)
             {
-                return base.PerformAsyncOperation(operation, processResult);
+                return base.PerformAsyncOperation(() => { }, operation, processResult);
             }
 
             public void NotifySpecialOperationCompletedTunnel(bool result)

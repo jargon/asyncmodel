@@ -46,6 +46,11 @@ namespace Async.Model.Sequence
                 list.AddRange(newItems);
             }
 
+            public void Clear()
+            {
+                list.Clear();
+            }
+
             public IEnumerator<T> GetEnumerator()
             {
                 return list.GetEnumerator();
@@ -87,6 +92,11 @@ namespace Async.Model.Sequence
             public void ReplaceAll(IEnumerable<T> newItems)
             {
                 this.queue = new Queue<T>(newItems);
+            }
+
+            public void Clear()
+            {
+                queue.Clear();
             }
 
             public IEnumerator<T> GetEnumerator()
@@ -141,6 +151,11 @@ namespace Async.Model.Sequence
             public void ReplaceAll(IEnumerable<T> newItems)
             {
                 innerSeq.ReplaceAll(newItems);
+            }
+
+            public void Clear()
+            {
+                innerSeq.Clear();
             }
 
             public IEnumerator<T> GetEnumerator()

@@ -46,13 +46,14 @@ namespace Async.Model.AsyncLoaded
 
         public Task LoadAsync()
         {
-            return PerformAsyncOperation(loadAsync, ProcessItemUnderLock);
+            // TODO: Should we follow behaviour of AsyncLoader and clear item during load?
+            return PerformAsyncOperation(() => { }, loadAsync, ProcessItemUnderLock);
         }
 
         public Task UpdateAsync()
         {
             var it = Item;  // read under lock
-            return PerformAsyncOperation(token => updateAsync(it, token), ProcessItemUnderLock);
+            return PerformAsyncOperation(() => { }, token => updateAsync(it, token), ProcessItemUnderLock);
         }
 
         private Tuple<T, T> ProcessItemUnderLock(T newItem, CancellationToken cancellationToken)
