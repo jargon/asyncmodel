@@ -111,7 +111,7 @@ namespace Async.Model
             NotifyCollectionChanged(ChangeType.Added, item);
         }
 
-        public virtual void Replace(TItem newItem)
+        public virtual void Replace(TItem oldItem, TItem newItem)
         {
             throw new NotSupportedException("AsyncLoader does not support Replace");
         }

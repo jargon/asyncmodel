@@ -40,14 +40,15 @@ namespace Async.Model.Sequence
                 return item;
             }
 
-            public void Replace(T item)
+            public void Replace(T oldItem, T newItem)
             {
-                int index = list.IndexOf(item);
+                var comparer = EqualityComparer<T>.Default;
 
-                if (index == -1)
-                    throw new ArgumentException("Not found: " + item, "item");
-
-                list[index] = item;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (comparer.Equals(list[i], oldItem))
+                        list[i] = newItem;
+                }
             }
 
             public void ReplaceAll(IEnumerable<T> newItems)
@@ -99,29 +100,9 @@ namespace Async.Model.Sequence
                 return queue.Dequeue();
             }
 
-            public void Replace(T item)
+            public void Replace(T oldItem, T newItem)
             {
-                // Use the same definition of equality as List<T>.IndexOf
-                var comparer = EqualityComparer<T>.Default;
-                bool found = false;
-
-                var filteredQueue = queue.Select(queueEntry =>
-                {
-                    if (comparer.Equals(queueEntry, item))
-                    {
-                        found = true;
-                        return item;
-                    }
-                    else
-                    {
-                        return queueEntry;
-                    }
-                });
-
-                if (!found)
-                    throw new ArgumentException("Not found: " + item, "item");
-
-                ReplaceAll(filteredQueue);
+                ReplaceAll(queue.Replace(oldItem, newItem));
             }
 
             public void ReplaceAll(IEnumerable<T> newItems)
@@ -183,9 +164,9 @@ namespace Async.Model.Sequence
                 innerSeq.Conj(item);
             }
 
-            public void Replace(T item)
+            public void Replace(T oldItem, T newItem)
             {
-                innerSeq.Replace(item);
+                innerSeq.Replace(oldItem, newItem);
             }
 
             public void ReplaceAll(IEnumerable<T> newItems)

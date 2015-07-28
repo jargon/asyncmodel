@@ -37,11 +37,11 @@ namespace Async.Model.AsyncLoaded
             }
         }
 
-        public override void Replace(TItem newItem)
+        public override void Replace(TItem oldItem, TItem newItem)
         {
             using (mutex.Lock())
             {
-                seq.Replace(newItem);
+                seq.Replace(oldItem, newItem);
                 NotifyCollectionChanged(ChangeType.Updated, newItem);
             }
         }
