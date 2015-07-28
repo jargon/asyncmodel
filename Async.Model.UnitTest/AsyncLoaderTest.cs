@@ -60,6 +60,25 @@ namespace Async.Model.UnitTest
             Assert.That(loader, Is.EqualTo(loadedItems));
         }
 
+        [Test]
+        public void LoadAsyncClearsPreviousContents()
+        {
+            IEnumerable<int> originalItems = new[] { 1, 2, 3 };
+            IEnumerable<int> loadedItems = new[] { 4, 5, 6 };
+
+            var loadFunc = Substitute.For<Func<CancellationToken, Task<IEnumerable<int>>>>();
+            loadFunc.Invoke(Arg.Any<CancellationToken>()).Returns(Task.FromResult(originalItems), Task.FromResult(loadedItems));
+
+            var loader = new AsyncLoader<int>(seqFactory: Seq.ListBased, loadDataAsync: loadFunc);
+
+            loader.LoadAsync();  // initial load
+            Assert.That(loader, Is.EqualTo(originalItems));  // sanity check
+
+
+            loader.LoadAsync();  // --- Perform ---
+            Assert.That(loader, Is.EqualTo(loadedItems));
+        }
+
         /// <summary>
         /// This test verifies that the tested class circumvents the issue which normal compiler generated event handler
         /// add/remove methods run into, namely that Delegate.Combine does not support delegates of different generic
@@ -223,6 +242,30 @@ namespace Async.Model.UnitTest
 
             listener.Received().Invoke(loader, Fluent.Match<EnumerableOfIntegerChangesAlias>(changes =>
                 changes.Should().ContainSingle().Which.ShouldBeEquivalentTo(new ItemChange<int>(ChangeType.Removed, 35))));
+        }
+
+        [Test]
+        public void AsyncLoaderDoesNotSupportReplace()
+        {
+            var loader = new AsyncLoader<int>(Seq.ListBased);
+            Action callingReplace = () => loader.Replace(1, 2);
+            callingReplace.ShouldThrow<NotSupportedException>();
+        }
+
+        [Test]
+        public void AsyncLoaderDoesNotSupportReplaceAll()
+        {
+            var loader = new AsyncLoader<int>(Seq.ListBased);
+            Action callingReplaceAll = () => loader.ReplaceAll(new int[0]);
+            callingReplaceAll.ShouldThrow<NotSupportedException>();
+        }
+
+        [Test]
+        public void AsyncLoaderDoesNotSupportClear()
+        {
+            var loader = new AsyncLoader<int>(Seq.ListBased);
+            Action callingClear = () => loader.Clear();
+            callingClear.ShouldThrow<NotSupportedException>();
         }
 
         // A smart trick for unit testing - use SpinWait.SpinUntil

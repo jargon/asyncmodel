@@ -13,6 +13,7 @@ namespace Async.Model.UnitTest
     [TestFixture]
     public class SeqTest
     {
+        #region ListBasedSeq
         [Test]
         public void ListBasedSeqCreatesSeqOfGivenItems()
         {
@@ -20,6 +21,7 @@ namespace Async.Model.UnitTest
             Assert.That(seq, Is.EqualTo(new[] { 1, 2, 3 }));
         }
 
+        #region Conj
         [Test]
         public void ConjOnListBasedSeqAddsToEnd()
         {
@@ -35,7 +37,9 @@ namespace Async.Model.UnitTest
             seq.Conj(1);
             Assert.That(seq, Is.EqualTo(new[] { 1 }));
         }
+        #endregion Conj
 
+        #region Take
         [Test]
         public void TakeOnListBasedSeqRemovesFromStart()
         {
@@ -53,7 +57,57 @@ namespace Async.Model.UnitTest
             var seq = Seq.ListBased(new int[0]);
             seq.Take();
         }
+        #endregion Take
 
+        #region Replace
+        [Test]
+        public void ReplaceOnEmptyListBasedSeqDoesNothing()
+        {
+            var emptySeq = Seq.ListBased(new int[0]);
+            emptySeq.Replace(1, 2);
+
+            Assert.That(emptySeq, Is.Empty);
+        }
+
+        [Test]
+        public void ReplaceOnListBasedSeqWithSingleItemReplacesItemWhenMatched()
+        {
+            var singleton = Seq.ListBased(new[] { 1 });
+            singleton.Replace(1, 2);
+
+            Assert.That(singleton, Is.EqualTo(new[] { 2 }));
+        }
+
+        [Test]
+        public void ReplaceOnListBasedSeqWithSingleDoesNothingWhenNotMatched()
+        {
+            var singleton = Seq.ListBased(new[] { 1 });
+            singleton.Replace(2, 1);
+
+            Assert.That(singleton, Is.EqualTo(new[] { 1 }));
+        }
+
+        [Test]
+        public void ReplaceOnListBasedSeqReplacesAllOccurrences()
+        {
+            var duplicates = Seq.ListBased(new[] { 1, 2, 3, 2, 4, 2 });
+            duplicates.Replace(2, 3);
+
+            Assert.That(duplicates, Is.EqualTo(new[] { 1, 3, 3, 3, 4, 3 }));
+        }
+
+        [Test]
+        public void ReplaceOnListBasedSeqWithSameValueDoesNothing()
+        {
+            var repeated = Seq.ListBased(new[] { 1, 1, 1 });
+            repeated.Replace(1, 1);
+
+            Assert.That(repeated, Is.EqualTo(new[] { 1, 1, 1 }));
+        }
+        #endregion Replace
+        #endregion ListBasedSeq
+
+        #region QueueBasedSeq
         [Test]
         public void QueueBasedSeqCreatesSeqOfGivenItems()
         {
@@ -61,6 +115,7 @@ namespace Async.Model.UnitTest
             Assert.That(seq, Is.EqualTo(new[] { 1, 2, 3 }));
         }
 
+        #region Conj
         [Test]
         public void ConjOnQueueBasedSeqEnqueuesToEnd()
         {
@@ -76,7 +131,9 @@ namespace Async.Model.UnitTest
             seq.Conj(1);
             Assert.That(seq, Is.EqualTo(new[] { 1 }));
         }
+        #endregion Conj
 
+        #region Take
         [Test]
         public void TakeOnQueueBasedSeqDequeuesFromStart()
         {
@@ -94,7 +151,57 @@ namespace Async.Model.UnitTest
             var seq = Seq.QueueBased(new int[0]);
             seq.Take();
         }
+        #endregion Take
 
+        #region Replace
+        [Test]
+        public void ReplaceOnEmptyQueueBasedSeqDoesNothing()
+        {
+            var emptySeq = Seq.QueueBased(new int[0]);
+            emptySeq.Replace(1, 2);
+
+            Assert.That(emptySeq, Is.Empty);
+        }
+
+        [Test]
+        public void ReplaceOnQueueBasedSeqWithSingleItemReplacesItemWhenMatched()
+        {
+            var singleton = Seq.QueueBased(new[] { 1 });
+            singleton.Replace(1, 2);
+
+            Assert.That(singleton, Is.EqualTo(new[] { 2 }));
+        }
+
+        [Test]
+        public void ReplaceOnQueueBasedSeqWithSingleDoesNothingWhenNotMatched()
+        {
+            var singleton = Seq.QueueBased(new[] { 1 });
+            singleton.Replace(2, 1);
+
+            Assert.That(singleton, Is.EqualTo(new[] { 1 }));
+        }
+
+        [Test]
+        public void ReplaceOnQueueBasedSeqReplacesAllOccurrences()
+        {
+            var duplicates = Seq.QueueBased(new[] { 1, 2, 3, 2, 4, 2 });
+            duplicates.Replace(2, 3);
+
+            Assert.That(duplicates, Is.EqualTo(new[] { 1, 3, 3, 3, 4, 3 }));
+        }
+
+        [Test]
+        public void ReplaceOnQueueBasedSeqWithSameValueDoesNothing()
+        {
+            var repeated = Seq.QueueBased(new[] { 1, 1, 1 });
+            repeated.Replace(1, 1);
+
+            Assert.That(repeated, Is.EqualTo(new[] { 1, 1, 1 }));
+        }
+        #endregion Replace
+        #endregion QueueBasedSeq
+
+        #region AsAsync
         [Test]
         public void AsAsyncYieldsSeqWithSameItems()
         {
@@ -129,6 +236,17 @@ namespace Async.Model.UnitTest
         }
 
         [Test]
+        public void AsAsyncReplaceDelegatesToInnerSeq()
+        {
+            var innerSeq = Substitute.For<ISeq<int>>();
+
+            var asyncSeq = innerSeq.AsAsync();
+            asyncSeq.Replace(1, 2);
+
+            innerSeq.Received(1).Replace(1, 2);
+        }
+
+        [Test]
         public void AsAsyncConjAsyncDelegatesToInnerSeq()
         {
             var innerSeq = Substitute.For<ISeq<int>>();
@@ -155,7 +273,9 @@ namespace Async.Model.UnitTest
 
             innerSeq.Received(1).Take();
         }
+        #endregion AsAsync
 
+        #region SeqOverImmutableCollection
         // TODO: Should we delete the following tests and supporting class, since seqs based on immutable collections
         // are now a lot less useful, given that you can no longer create an immutable seq?
         [Test]
@@ -241,5 +361,6 @@ namespace Async.Model.UnitTest
                 return innerList.GetEnumerator();
             }
         }
+        #endregion SeqOverImmutableCollection
     }
 }

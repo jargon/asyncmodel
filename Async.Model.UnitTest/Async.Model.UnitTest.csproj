@@ -102,6 +102,7 @@
   </Choose>
   <ItemGroup>
     <Compile Include="AsyncLoaded\AsyncLoaderBaseTest.cs" />
+    <Compile Include="AsyncLoaded\ThreadSafeAsyncLoaderTest.cs" />
     <Compile Include="AsyncLoaderTest.cs" />
     <Compile Include="Fluent.cs" />
     <Compile Include="FullOuterJoinTest.cs" />
