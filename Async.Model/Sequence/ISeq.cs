@@ -27,6 +27,14 @@ namespace Async.Model.Sequence
         void Conj(T item);
 
         /// <summary>
+        /// Replaces all instances of <paramref name="oldItem"/> in the sequence with <paramref name="newItem"/>. Items
+        /// are compared by whatever definition of equality the seq uses.
+        /// </summary>
+        /// <param name="oldItem">The item to be replaced.</param>
+        /// <param name="newItem">The replacement item to use.</param>
+        void Replace(T oldItem, T newItem);
+
+        /// <summary>
         /// Replaces all items in the sequence with the given new items. This has the same effect as iterating through
         /// newItems and calling Conj for each item, except possibly more efficient. Also, if the seq is thread-safe,
         /// this operation is required to be atomic.

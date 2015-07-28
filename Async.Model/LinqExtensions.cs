@@ -6,6 +6,48 @@ namespace Async.Model
 {
     public static class LinqExtensions
     {
+        /// <summary>
+        /// Returns a new sequence in which all instances of oldItem are replaced with newItem. Instances are compared
+        /// for equality using <c>EqualityComparer&lt;TSource&gt;.Default</c>.
+        /// </summary>
+        /// <remarks>This method is implemented using deferred execution.</remarks>
+        /// <typeparam name="TSource">The type of elements of source.</typeparam>
+        /// <param name="source">A sequence of values in which to replace some items.</param>
+        /// <param name="oldItem">Item to be replaced.</param>
+        /// <param name="newItem">Item to substitute for the old one.</param>
+        /// <returns>A new sequence with all instances of oldItem replaced with newItem.</returns>
+        public static IEnumerable<TSource> Replace<TSource>(this IEnumerable<TSource> source, TSource oldItem, TSource newItem)
+        {
+            return Replace(source, oldItem, newItem, EqualityComparer<TSource>.Default);
+        }
+
+        /// <summary>
+        /// Returns a new sequence in which all instances of oldItem are replaced with newItem. Instances are compared
+        /// for equality using the given comparer.
+        /// </summary>
+        /// <remarks>This method is implemented using deferred execution.</remarks>
+        /// <typeparam name="TSource">The type of elements of source.</typeparam>
+        /// <param name="source">A sequence of values in which to replace some items.</param>
+        /// <param name="oldItem">Item to be replaced.</param>
+        /// <param name="newItem">Item to substitute for the old one.</param>
+        /// <param name="comparer">Comparer to use when matching oldItem against elements of the sequence.</param>
+        /// <returns>A new sequence with all instances of oldItem replaced with newItem.</returns>
+        public static IEnumerable<TSource> Replace<TSource>(
+            this IEnumerable<TSource> source, TSource oldItem, TSource newItem, IEqualityComparer<TSource> comparer)
+        {
+            // TODO: Use nameof operator once we upgrade to C# 6.0
+            if (source == null) throw new ArgumentNullException("source");
+            if (comparer == null) throw new ArgumentNullException("comparer");
+            
+            return source.Select(item =>
+            {
+                if (comparer.Equals(item, oldItem))
+                    return newItem;
+                else
+                    return item;
+            });
+        }
+
         public static IEnumerable<TResult> FullOuterJoin<TLeft, TRight, TKey, TResult>(
             this IEnumerable<TLeft> left,
             IEnumerable<TRight> right,
@@ -53,9 +95,6 @@ namespace Async.Model
             Func<TOld, TKey> oldItemKeySelector,
             IEqualityComparer<TKey> identityComparer = null,
             IEqualityComparer<TKey> updateComparer = null)
-            where TNew : class
-            where TOld : class
-            where TKey : class
         {
             if (newItems == null) throw new ArgumentNullException("newItems");
             if (oldItems == null) throw new ArgumentNullException("oldItems");
@@ -75,8 +114,8 @@ namespace Async.Model
                 var newKey = newItemKeySelector(n);
                 var oldKey = oldItemKeySelector(o);
 
-                if (newKey != oldKey && !updateComparer.Equals(newKey, oldKey))
-                    return new ItemChange<TKey>(ChangeType.Updated, newItemKeySelector(n));
+                if (!updateComparer.Equals(newKey, oldKey))
+                    return new ItemChange<TKey>(ChangeType.Updated, newKey);
 
                 return new ItemChange<TKey>(ChangeType.Unchanged, newKey);
 

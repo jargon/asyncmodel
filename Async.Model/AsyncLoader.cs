@@ -111,6 +111,11 @@ namespace Async.Model
             NotifyCollectionChanged(ChangeType.Added, item);
         }
 
+        public virtual void Replace(TItem oldItem, TItem newItem)
+        {
+            throw new NotSupportedException("AsyncLoader does not support Replace");
+        }
+
         public virtual void ReplaceAll(IEnumerable<TItem> newItems)
         {
             throw new NotSupportedException("AsyncLoader does not support ReplaceAll");
@@ -178,7 +183,7 @@ namespace Async.Model
         }
         #endregion
 
-        private void NotifyCollectionChanged(ChangeType type, TItem item)
+        protected void NotifyCollectionChanged(ChangeType type, TItem item)
         {
             var changes = new[] { new ItemChange<TItem>(type, item) };
             NotifySpecialOperationCompleted(changes);
