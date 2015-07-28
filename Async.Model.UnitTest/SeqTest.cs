@@ -216,9 +216,9 @@ namespace Async.Model.UnitTest
                 innerList = innerList.Add(item);
             }
 
-            public void Replace(T item)
+            public void Replace(T oldItem, T newItem)
             {
-                innerList = innerList.Replace(item, item);
+                innerList = innerList.Replace(oldItem, newItem);
             }
 
             public void ReplaceAll(IEnumerable<T> newItems)
