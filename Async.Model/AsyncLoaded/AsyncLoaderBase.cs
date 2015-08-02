@@ -14,6 +14,7 @@ namespace Async.Model.AsyncLoaded
         /// <summary>The root cancellation token this loader was initialized with. Allows for grouped cancellation.</summary>
         protected readonly CancellationToken rootCancellationToken;
 
+        // TODO: make mutex a plain object and switch to use lock keyword: we never use the async feature anyway and we want reentrancy
         /// <summary>A lock that can be taken both synchronously and asynchronously. This lock should always be used when accessing mutable fields.</summary>
         /// <remarks>An AsyncLock is NOT reentrant, so subclasses must be careful to only take it when it is known to not already be held.</remarks>
         protected readonly AsyncLock mutex = new AsyncLock();
@@ -191,8 +192,7 @@ namespace Async.Model.AsyncLoaded
             // Perform notification on event scheduler
             Task.Factory.StartNew(() =>
             {
-                if (operationCompletedHandler != null)
-                    operationCompletedHandler(this, result);
+                operationCompletedHandler(this, result);
             }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
         }
 

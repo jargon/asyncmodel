@@ -1,14 +1,12 @@
 ﻿using System.Reflection;
-using System.Resources;
 using System.Runtime.InteropServices;
 
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyProduct("Async.Model")]
-[assembly: AssemblyTitle("Async.Model")]
-[assembly: AssemblyDescription("Building blocks for asynchronous domain models.")]
-[assembly: NeutralResourcesLanguage("en")]
+[assembly: AssemblyProduct("Async.Model.TestExtensions")]
+[assembly: AssemblyTitle("Async.Model.TestExtensions")]
+[assembly: AssemblyDescription("Test extensions for asynchronous domain models.")]
 
 // Setting ComVisible to false makes the types in this assembly not visible 
 // to COM components.  If you need to access a type in this assembly from 
@@ -25,8 +23,8 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.0.0.3")]
+[assembly: AssemblyVersion("1.0.0.4")]
 
 // This is needed for specifying NuGet package version since AssemblyVersion does
 // not support semantic versioning.
-[assembly: AssemblyInformationalVersion("1.0.0-beta3")]
+[assembly: AssemblyFileVersion("1.0.0.4")]

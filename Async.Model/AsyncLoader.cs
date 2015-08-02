@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Nito.AsyncEx;
 
 namespace Async.Model
 {
@@ -20,6 +21,7 @@ namespace Async.Model
 
 
         public AsyncLoader(
+            // TODO: There's no longer a point in taking a factory, change to take an ISeq directly
             Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory,
             Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync = null,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync = null,
@@ -61,27 +63,27 @@ namespace Async.Model
         /// Note that it is okay to Conj items to the collection while loading. When the loading completes, any items
         /// in the seq will be concatenated to the loaded items.
         /// </remarks>
-        public void LoadAsync()
+        public Task LoadAsync()
         {
             if (loadDataAsync == null)
             {
                 // We still need to clear the seq under lock
                 using (mutex.Lock())
                 {
-                    seq.Clear();
+                    ClearInsideLock();
                 }
-                return;
+                return TaskConstants.Completed;
             }
 
-            PerformAsyncOperation(() => seq.Clear(), loadDataAsync, InsertLoadedDataInsideLock);
+            return PerformAsyncOperation(() => ClearInsideLock(), loadDataAsync, InsertLoadedDataInsideLock);
         }
 
-        public void UpdateAsync()
+        public Task UpdateAsync()
         {
             if (fetchUpdatesAsync == null)
-                return;
+                return TaskConstants.Completed;
 
-            PerformAsyncOperation(() => { }, token => fetchUpdatesAsync(seq, token), PerformUpdatesInsideLock);
+            return PerformAsyncOperation(() => { }, token => fetchUpdatesAsync(seq, token), PerformUpdatesInsideLock);
         }
         #endregion
 
@@ -121,9 +123,20 @@ namespace Async.Model
             throw new NotSupportedException("AsyncLoader does not support ReplaceAll");
         }
 
+        // TODO: AsyncLoader should implement Clear instead of using ClearInsideLock once we switch mutex to a reentrant lock
         public virtual void Clear()
         {
             throw new NotSupportedException("AsyncLoader does not support Clear");
+        }
+
+        private void ClearInsideLock()
+        {
+            var changes = seq.Select(item => new ItemChange<TItem>(ChangeType.Removed, item))
+                .ToArray();  // must materialize before we change seq
+
+            seq.Clear();
+
+            NotifyCollectionChanged(changes);
         }
 
         public virtual async Task<TItem> TakeAsync(CancellationToken cancellationToken)
@@ -187,6 +200,15 @@ namespace Async.Model
         {
             var changes = new[] { new ItemChange<TItem>(type, item) };
             NotifySpecialOperationCompleted(changes);
+        }
+
+        protected void NotifyCollectionChanged(ItemChange<TItem>[] changes)
+        {
+            if (changes.Length > 0)
+            {
+                // Only notify if actual changes were made
+                NotifySpecialOperationCompleted(changes);
+            }
         }
     }
 }
