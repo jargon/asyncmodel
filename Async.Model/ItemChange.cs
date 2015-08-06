@@ -29,5 +29,10 @@
                 return type.GetHashCode() + 7 * item.GetHashCode();
             }
         }
+
+        public override string ToString()
+        {
+            return string.Format("ItemChange({0:G}, {1})", type, item);
+        }
     }
 }

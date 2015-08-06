@@ -1,10 +1,11 @@
-﻿using Async.Model.Sequence;
+﻿using System.Threading.Tasks;
+using Async.Model.Sequence;
 
 namespace Async.Model.AsyncLoaded
 {
     public interface IAsyncCollectionLoader<T> : IAsyncCollection<T>, IAsyncSeq<T>
     {
-        void LoadAsync();
-        void UpdateAsync();
+        Task LoadAsync();
+        Task UpdateAsync();
     }
 }

@@ -88,38 +88,78 @@ namespace Async.Model
                         yield return resultSelector(leftValue, rightValue, key);
         }
 
-        public static IEnumerable<ItemChange<TKey>> ChangesFrom<TNew, TOld, TKey>(
-            this IEnumerable<TNew> newItems,
-            IEnumerable<TOld> oldItems,
-            Func<TNew, TKey> newItemKeySelector,
-            Func<TOld, TKey> oldItemKeySelector,
-            IEqualityComparer<TKey> identityComparer = null,
-            IEqualityComparer<TKey> updateComparer = null)
+        /// <summary>
+        /// Calculates the changes between the new sequence and the old sequence and returns the
+        /// result as a sequence of <see cref="ItemChange{T}"/>. Item ordering is ignored, so the
+        /// two sequences are effectively treated as mathematical sets.
+        /// </summary>
+        /// <typeparam name="TSource">The type of items in <paramref name="newItems"/> and <paramref name="oldItems"/>.</typeparam>
+        /// <param name="newItems">The input sequence of new items.</param>
+        /// <param name="oldItems">The input sequence of old items to calculate changes against.</param>
+        /// <param name="identityComparer">The <see cref="IEqualityComparer{T}"/> to use when determining if two items are versions of the same logical object.</param>
+        /// <param name="updateComparer">The <see cref="IEqualityComparer{T}"/> to use when determining if two items are the same version of the same logical object.</param>
+        /// <returns>A sequence of <see cref="ItemChange{T}"/> that describes all changes from the old sequence to the new.</returns>
+        public static IEnumerable<ItemChange<TSource>> ChangesFrom<TSource>(
+            this IEnumerable<TSource> newItems,
+            IEnumerable<TSource> oldItems,
+            IEqualityComparer<TSource> identityComparer = null,
+            IEqualityComparer<TSource> updateComparer = null)
         {
             if (newItems == null) throw new ArgumentNullException("newItems");
             if (oldItems == null) throw new ArgumentNullException("oldItems");
-            if (newItemKeySelector == null) throw new ArgumentNullException("newItemKeySelector");
-            if (oldItemKeySelector == null) throw new ArgumentNullException("oldItemKeySelector");
 
-            identityComparer = identityComparer ?? EqualityComparer<TKey>.Default;
-            updateComparer = updateComparer ?? EqualityComparer<TKey>.Default;
+            identityComparer = identityComparer ?? EqualityComparer<TSource>.Default;
+            updateComparer = updateComparer ?? EqualityComparer<TSource>.Default;
 
-            return newItems.FullOuterJoin(oldItems, newItemKeySelector, oldItemKeySelector, (n, o, k) =>
+            return ChangesFromIterator(newItems, oldItems, identityComparer, updateComparer);
+        }
+
+        internal static IEnumerable<ItemChange<T>> ChangesFromIterator<T>(
+            IEnumerable<T> newItems,
+            IEnumerable<T> oldItems,
+            IEqualityComparer<T> identityComparer,
+            IEqualityComparer<T> updateComparer)
+        {
+            // Ensure fast lookup of items
+            Dictionary<T, T> newDict = null;
+            Dictionary<T, T> oldDict = null;
+
+            try
             {
-                if (n == null)
-                    return new ItemChange<TKey>(ChangeType.Removed, k);
-                else if (o == null)
-                    return new ItemChange<TKey>(ChangeType.Added, k);
+                newDict = newItems.ToDictionary(item => item, identityComparer);
+                oldDict = oldItems.ToDictionary(item => item, identityComparer);
+            }
+            catch (ArgumentException)
+            {
+                // We will get an ArgumentException in case of duplicates in newItems or oldItems
 
-                var newKey = newItemKeySelector(n);
-                var oldKey = oldItemKeySelector(o);
+                // If newDict has not been set, then newItems caused the error, otherwise it must be oldItems
+                // TODO: Use nameof operator when we upgrade to C# 6.0
+                var argumentName = (newDict == null) ? "newItems" : "oldItems";
+                throw new ArgumentException("Duplicates not allowed", argumentName);
+            }
 
-                if (!updateComparer.Equals(newKey, oldKey))
-                    return new ItemChange<TKey>(ChangeType.Updated, newKey);
+            // Make a pass through the old items to find updates and removals
+            foreach (var oldItem in oldDict.Keys)
+            {
+                if (newDict.ContainsKey(oldItem))
+                {
+                    var newItem = newDict[oldItem];
+                    if (!updateComparer.Equals(newItem, oldItem))
+                        yield return new ItemChange<T>(ChangeType.Updated, newItem);
+                }
+                else
+                {
+                    yield return new ItemChange<T>(ChangeType.Removed, oldItem);
+                }
+            }
 
-                return new ItemChange<TKey>(ChangeType.Unchanged, newKey);
-
-            }, identityComparer);
+            // Make a pass through the new items to find additions
+            foreach (var newItem in newDict.Keys)
+            {
+                if (!oldDict.ContainsKey(newItem))
+                    yield return new ItemChange<T>(ChangeType.Added, newItem);
+            }
         }
     }
 }

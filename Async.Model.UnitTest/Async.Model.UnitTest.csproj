@@ -36,12 +36,12 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="FluentAssertions, Version=3.4.0.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
-      <HintPath>..\packages\FluentAssertions.3.4.0\lib\net45\FluentAssertions.dll</HintPath>
+    <Reference Include="FluentAssertions, Version=3.4.1.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
+      <HintPath>..\packages\FluentAssertions.3.4.1\lib\net45\FluentAssertions.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="FluentAssertions.Core, Version=3.4.0.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
-      <HintPath>..\packages\FluentAssertions.3.4.0\lib\net45\FluentAssertions.Core.dll</HintPath>
+    <Reference Include="FluentAssertions.Core, Version=3.4.1.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
+      <HintPath>..\packages\FluentAssertions.3.4.1\lib\net45\FluentAssertions.Core.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Nito.AsyncEx, Version=3.0.1.0, Culture=neutral, processorArchitecture=MSIL">
@@ -102,18 +102,25 @@
   </Choose>
   <ItemGroup>
     <Compile Include="AsyncLoaded\AsyncLoaderBaseTest.cs" />
+    <Compile Include="AsyncLoaded\ThreadSafeAsyncLoaderTest.cs" />
     <Compile Include="AsyncLoaderTest.cs" />
     <Compile Include="Fluent.cs" />
     <Compile Include="FullOuterJoinTest.cs" />
     <Compile Include="GenericContravarianceTest.cs" />
+    <Compile Include="LinqExtensionsTest.cs" />
     <Compile Include="LookupTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeqTest.cs" />
+    <Compile Include="TestExtensions\FluentAssertionsExtensionsTest.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Async.Model.TestExtensions\Async.Model.TestExtensions.csproj">
+      <Project>{44b10dd1-3734-443f-9d74-eb8beb40ca93}</Project>
+      <Name>Async.Model.TestExtensions</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Async.Model\Async.Model.csproj">
       <Project>{222ab3c6-bfdb-40bb-b0ba-9c059b1437e3}</Project>
       <Name>Async.Model</Name>
