@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 // associated with an assembly.
 [assembly: AssemblyProduct("Async.Model.UnitTest")]
 [assembly: AssemblyTitle("Async.Model.UnitTest")]
-[assembly: AssemblyCopyright("Copyright © Søren Nguyen Boisen 2015")]
 
 // Setting ComVisible to false makes the types in this assembly not visible 
 // to COM components.  If you need to access a type in this assembly from 
@@ -26,8 +25,8 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.0.0.4")]
+[assembly: AssemblyVersion("1.0.0.5")]
 
 // This is needed for specifying NuGet package version since AssemblyVersion does
 // not support semantic versioning.
-[assembly: AssemblyInformationalVersion("1.0.0-beta4")]
+[assembly: AssemblyInformationalVersion("1.0.0-beta5")]

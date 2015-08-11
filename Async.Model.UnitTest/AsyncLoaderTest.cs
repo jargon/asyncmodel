@@ -96,6 +96,83 @@ namespace Async.Model.UnitTest
             loader.Should().BeEquivalentTo(new[] { 1, 2, 3, 4 });
         }
 
+        [Test]
+        public async Task CanUpdateEmptyLoaderWithEmptyChanges()
+        {
+            var loader = new AsyncLoader<int>(
+                seqFactory: Seq.ListBased,
+                fetchUpdatesAsync: (_, __) => Task.FromResult(Enumerable.Empty<ItemChange<int>>()));
+
+            await loader.UpdateAsync();  // --- Perform ---
+
+            loader.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task CanUpdateEmptyLoaderWithSingleAddition()
+        {
+            IEnumerable<ItemChange<int>> changes = new[] { new ItemChange<int>(ChangeType.Added, 1) };
+
+            var loader = new AsyncLoader<int>(
+                seqFactory: Seq.ListBased,
+                fetchUpdatesAsync: (_, __) => Task.FromResult(changes));
+
+            await loader.UpdateAsync(); // --- Perform ---
+
+            loader.ShouldAllBeEquivalentTo(new[] { 1 });
+        }
+
+        /// <summary>
+        /// This is an important part of the AsyncLoader contract: it must allow the fetchUpdatesAsync delegate to
+        /// return an empty sequence of item changes, since there may not be any changes.
+        /// </summary>
+        [Test]
+        public async Task CanUpdateNonEmptyLoaderWithEmptyChanges()
+        {
+            IEnumerable<int> initialItems = new[] { 1, 2, 3 };
+
+            var loader = new AsyncLoader<int>(
+                seqFactory: Seq.ListBased,
+                loadDataAsync: _ => Task.FromResult(initialItems),
+                fetchUpdatesAsync: (_, __) => Task.FromResult(Enumerable.Empty<ItemChange<int>>()));
+            await loader.LoadAsync();  // load initial data
+
+            await loader.UpdateAsync(); // --- Perform ---
+
+            loader.ShouldAllBeEquivalentTo(initialItems);
+        }
+
+        /// <summary>
+        /// This is an important part of the AsyncLoader contract: if items are Conj'ed during the update, they must be
+        /// preserved, since they won't be part of the change calculation.
+        /// </summary>
+        /// <returns></returns>
+        [Test]
+        public async Task UpdateAsyncPreservesItemsAddedDuringUpdate()
+        {
+            IEnumerable<ItemChange<int>> changes = new[]
+            {
+                new ItemChange<int>(ChangeType.Added, 2),
+                new ItemChange<int>(ChangeType.Added, 3)
+            };
+
+            var updateTask = new TaskCompletionSource<IEnumerable<ItemChange<int>>>();
+            var loader = new AsyncLoader<int>(
+                seqFactory: Seq.ListBased,
+                fetchUpdatesAsync: (_, __) => updateTask.Task);
+
+
+            // --- Perform ---
+            var finishUpdate = loader.UpdateAsync();  // returns a continuation stuck waiting for updateTask to complete
+            loader.Conj(1);
+
+            updateTask.SetResult(changes);  // complete updateTask...
+            await finishUpdate;  // ...and wait for completion to finish
+
+
+            loader.ShouldAllBeEquivalentTo(new[] { 1, 2, 3 });
+        }
+
         /// <summary>
         /// This test verifies that the tested class circumvents the issue which normal compiler generated event handler
         /// add/remove methods run into, namely that Delegate.Combine does not support delegates of different generic

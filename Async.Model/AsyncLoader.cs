@@ -179,9 +179,10 @@ namespace Async.Model
         private IEnumerable<ItemChange<TItem>> PerformUpdatesInsideLock(IEnumerable<ItemChange<TItem>> fetchedUpdates, CancellationToken cancellationToken)
         {
             // Enumerating fetchedUpdates may throw an exception, which will be handled in base class
+            // NOTE: We preserve any items from seq not found in fetchedUpdates, since they must have been Conj'ed
             var changes = seq
                 .FullOuterJoin(fetchedUpdates, i => i, u => u.Item,
-                    (i, u, k) => new ItemChange<TItem>(u.Type, (u.Type == ChangeType.Updated) ? u.Item : k))
+                    (i, u, k) => u ?? new ItemChange<TItem>(ChangeType.Unchanged, i))
                 .ToArray();  // materialize to prevent multiple enumerations of source
 
             // Filter out removed items
