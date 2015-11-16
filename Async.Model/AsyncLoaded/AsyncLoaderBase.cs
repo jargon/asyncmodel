@@ -8,8 +8,8 @@ namespace Async.Model.AsyncLoaded
 {
     public abstract class AsyncLoaderBase<TLoadResult> : IAsyncLoaded
     {
-        /// <summary>The scheduler used for raising events. This ultimately decides which thread the event notification is run on.</summary>
-        protected readonly TaskScheduler eventScheduler;
+        /// <summary>The <see cref="SynchronizationContext"/> used to post event notifications on.</summary>
+        protected readonly SynchronizationContext eventContext;
 
         /// <summary>The root cancellation token this loader was initialized with. Allows for grouped cancellation.</summary>
         protected readonly CancellationToken rootCancellationToken;
@@ -33,14 +33,9 @@ namespace Async.Model.AsyncLoaded
 
         protected AsyncLoaderBase(CancellationToken rootCancellationToken) : this(null, rootCancellationToken) { }
 
-        protected AsyncLoaderBase(TaskScheduler eventScheduler, CancellationToken rootCancellationToken)
+        protected AsyncLoaderBase(SynchronizationContext eventContext, CancellationToken rootCancellationToken)
         {
-            if (eventScheduler == null)
-            {
-                eventScheduler = (SynchronizationContext.Current == null) ? TaskScheduler.Current : TaskScheduler.FromCurrentSynchronizationContext();
-            }
-
-            this.eventScheduler = eventScheduler;
+            this.eventContext = eventContext ?? SynchronizationContext.Current ?? new SynchronizationContext();
             this.rootCancellationToken = rootCancellationToken;
         }
 
@@ -184,18 +179,11 @@ namespace Async.Model.AsyncLoaded
 
         protected void NotifySpecialOperationCompleted(TLoadResult result)
         {
-            var operationCompletedHandler = AsyncOperationCompleted;
-
-            if (operationCompletedHandler == null)
-                return;
-
-            // Perform notification on event scheduler
-            Task.Factory.StartNew(() =>
-            {
-                operationCompletedHandler(this, result);
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            // Delegate to private method, so we can group implementation code together but also group API methods together
+            NotifySpecialOperationCompletedCore(result);
         }
 
+        #region Continuations
         private void ProcessResultAndUpdateStatus<TResult>(Task<TResult> operationTask, Func<TResult, CancellationToken, TLoadResult> processResult)
         {
             Debug.Assert(operationTask.IsCompleted);
@@ -265,7 +253,9 @@ namespace Async.Model.AsyncLoaded
             // Report result
             NotifyOperationFailedOrCancelled(oldStatus, newStatus, locExc);
         }
+        #endregion Continuations
 
+        #region Notifications
         private void NotifyOperationStarted(AsyncStatus oldStatus)
         {
             // Contract
@@ -275,14 +265,28 @@ namespace Async.Model.AsyncLoaded
             if (statusChangeHandler == null)
                 return;
 
-            // Perform notification on event scheduler
+            // Post notification to event context
             // NOTE: The compiler transforms the lambda to an inner class with a field for "this", so using "this"
-            // inside the lambda is fine and will refer to this class as expected
+            // inside the lambda is fine and will refer to this class instance as expected
             // See: http://stackoverflow.com/questions/11103745/c-sharp-lambdas-and-this-variable-scope
-            Task.Factory.StartNew(() =>
+            eventContext.Post(dummyState =>
             {
                 statusChangeHandler(this, new AsyncStatusTransition(oldStatus, AsyncStatus.Loading));
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            }, null);
+        }
+
+        private void NotifySpecialOperationCompletedCore(TLoadResult notifData)
+        {
+            var operationCompletedHandler = AsyncOperationCompleted;
+
+            if (operationCompletedHandler == null)
+                return;
+
+            // Post notification to event context
+            eventContext.Post(dummyState =>
+            {
+                operationCompletedHandler(this, notifData);
+            }, null);
         }
 
         private void NotifyOperationCompleted(TLoadResult notifData)
@@ -293,15 +297,15 @@ namespace Async.Model.AsyncLoaded
             if (statusChangeHandler == null && operationCompletedHandler == null)
                 return;
 
-            // Perform notification on event scheduler
-            Task.Factory.StartNew(() =>
+            // Post notifications to event context
+            eventContext.Post(dummyState =>
             {
                 if (statusChangeHandler != null)
                     statusChangeHandler(this, new AsyncStatusTransition(AsyncStatus.Loading, AsyncStatus.Ready));
 
                 if (operationCompletedHandler != null)
                     operationCompletedHandler(this, notifData);
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            }, null);
         }
 
         private void NotifyOperationFailedOrCancelled(AsyncStatus oldStatus, AsyncStatus newStatus, AggregateException exception)
@@ -312,11 +316,12 @@ namespace Async.Model.AsyncLoaded
             var statusChangeHandler = StatusChanged;
             var operationFailedHandler = AsyncOperationFailed;
 
+            // Early return if we have no work to be done
             if (statusChangeHandler == null && (operationFailedHandler == null || exception == null))
                 return;
 
-            // Perform notification on event scheduler
-            Task.Factory.StartNew(() =>
+            // Post notifications to event context
+            eventContext.Post(state =>
             {
                 if (statusChangeHandler != null)
                     statusChangeHandler(this, new AsyncStatusTransition(oldStatus, newStatus));
@@ -330,7 +335,8 @@ namespace Async.Model.AsyncLoaded
                 // Fire event for each exception
                 foreach (var exc in exception.InnerExceptions)
                     operationFailedHandler(this, exc);
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            }, null);
         }
+        #endregion Notifications
     }
 }

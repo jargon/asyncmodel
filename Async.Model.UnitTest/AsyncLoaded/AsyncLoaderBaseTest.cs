@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Schedulers;
+using Async.Model.Context;
 
 namespace Async.Model.UnitTest.AsyncLoaded
 {
@@ -75,7 +76,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
 
             postProcess.DidNotReceive().Invoke(Arg.Any<bool>(), Arg.Any<CancellationToken>());
         }
-        #endregion
+        #endregion Execution flow
 
         #region Status property and StatusChanged event
         [Test]
@@ -84,7 +85,8 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var longTask = new TaskCompletionSource<bool>();
             var statusHandler = Substitute.For<EventHandler<AsyncStatusTransition>>();
 
-            var asyncLoader = new AsyncLoaderTestImpl();
+            // Have event notifications be executed inline on current thread
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.StatusChanged += statusHandler;
 
             Assert.That(asyncLoader.Status, Is.EqualTo(AsyncStatus.Ready));
@@ -102,7 +104,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void TransitionsStatusToFailedForOperationThatFails()
         {
             var statusHandler = Substitute.For<EventHandler<AsyncStatusTransition>>();
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.StatusChanged += statusHandler;
 
             asyncLoader.PerformAsyncOperation(token => FromException(new Exception()));
@@ -116,7 +118,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void TransitionsStatusToCancelledForCancelledOperation()
         {
             var statusHandler = Substitute.For<EventHandler<AsyncStatusTransition>>();
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.StatusChanged += statusHandler;
 
             asyncLoader.PerformAsyncOperation(token => TaskConstants<bool>.Canceled);
@@ -125,13 +127,14 @@ namespace Async.Model.UnitTest.AsyncLoaded
             statusHandler.Received().Invoke(asyncLoader, new AsyncStatusTransition(AsyncStatus.Ready, AsyncStatus.Loading));
             statusHandler.Received().Invoke(asyncLoader, new AsyncStatusTransition(AsyncStatus.Loading, AsyncStatus.Cancelled));
         }
-        #endregion
+        #endregion Status property and StatusChanged event
 
         #region Exception/InnerException/ErrorMessage properties and AsyncOperationFailed event
         [Test]
         public void DoesNotReportExceptionOnSuccess()
         {
-            var asyncLoader = new AsyncLoaderTestImpl();
+            // Have event notifications be executed inline on current thread
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             var handler = Substitute.For<EventHandler<Exception>>();
             asyncLoader.AsyncOperationFailed += handler;
 
@@ -144,7 +147,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         [Test]
         public void DoesNotReportExceptionOnCancel()
         {
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             var handler = Substitute.For<EventHandler<Exception>>();
             asyncLoader.AsyncOperationFailed += handler;
 
@@ -160,7 +163,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var exception = new Exception();
             var handler = Substitute.For<EventHandler<Exception>>();
 
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.AsyncOperationFailed += handler;
 
             asyncLoader.PerformAsyncOperation(token => FromException(exception));
@@ -178,7 +181,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var exc2 = new Exception();
             var handler = Substitute.For<EventHandler<Exception>>();
 
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.AsyncOperationFailed += handler;
 
             asyncLoader.PerformAsyncOperation(token => FromExceptions(exc1, exc2));
@@ -201,7 +204,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             asyncLoader.PerformAsyncOperation(token => longTask.Task);
             Assert.That(asyncLoader.Exception, Is.Null);
         }
-        #endregion
+        #endregion Exception/InnerException/ErrorMessage properties and AsyncOperationFailed event
 
         #region AsyncOperationCompleted event
         [Test]
@@ -210,7 +213,8 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var longTask = new TaskCompletionSource<bool>();
             var completedHandler = Substitute.For<EventHandler<bool>>();
 
-            var asyncLoader = new AsyncLoaderTestImpl();
+            // Have event notifications be executed inline on current thread
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.AsyncOperationCompletedTunnel += completedHandler;
 
             // Here we check with a post process step that returns false
@@ -226,7 +230,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void ReportsAsyncOperationCompletedWithResultFromPostProcess()
         {
             var completedHandler = Substitute.For<EventHandler<bool>>();
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.AsyncOperationCompletedTunnel += completedHandler;
 
             // Now we check with a post process step that returns _true_
@@ -239,7 +243,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void ReportsAsyncOperationCompletedForSpecialOperations()
         {
             var completedHandler = Substitute.For<EventHandler<bool>>();
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.AsyncOperationCompletedTunnel += completedHandler;
 
             asyncLoader.NotifySpecialOperationCompletedTunnel(false);
@@ -253,7 +257,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void DoesNotReportAsyncOperationCompletedWhenOperationFails()
         {
             var completedHandler = Substitute.For<EventHandler<bool>>();
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.AsyncOperationCompletedTunnel += completedHandler;
 
             asyncLoader.PerformAsyncOperation(token => FromException(new Exception()));
@@ -265,14 +269,14 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void DoesNotReportAsyncOperationCompletedWhenOperationCancelled()
         {
             var completedHandler = Substitute.For<EventHandler<bool>>();
-            var asyncLoader = new AsyncLoaderTestImpl();
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.AsyncOperationCompletedTunnel += completedHandler;
 
             asyncLoader.PerformAsyncOperation(token => TaskConstants<bool>.Canceled);
 
             completedHandler.DidNotReceive().Invoke(Arg.Any<object>(), Arg.Any<bool>());
         }
-        #endregion
+        #endregion AsyncOperationCompleted event
 
         #region Event notification thread
         [Test]
@@ -284,7 +288,8 @@ namespace Async.Model.UnitTest.AsyncLoaded
             int expectedEventThreadId = GetCurrentThreadId();
             int actualEventThreadId = 0;
 
-            var asyncLoader = new AsyncLoaderTestImpl();
+            // Have event notifications be executed inline on current thread
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
             asyncLoader.StatusChanged += (s, e) =>
             {
                 // NOTE: Cannot perform asserts here, since the exceptions are eaten by the task scheduling mechanics.
@@ -298,13 +303,13 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
-        public void NotifiesOfOperationStartOnThreadPoolIfEventSchedulerIsDefault()
+        public void NotifiesOfOperationStartOnThreadPoolIfEventContextIsNullAndNoAmbientContext()
         {
             // Need to marshal the notification thread id back to main thread, we can use TCS for that
             var notificationResult = new TaskCompletionSource<int>();
 
             // Now create a loader that uses the thread pool for notifications
-            var asyncLoader = new AsyncLoaderTestImpl(TaskScheduler.Default);
+            var asyncLoader = new AsyncLoaderTestImpl(eventContext: null);
             asyncLoader.StatusChanged += (s, e) => { notificationResult.SetResult(GetCurrentThreadId()); };
 
             asyncLoader.PerformAsyncOperation(token => TaskConstants<bool>.Never);
@@ -317,7 +322,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
-        public void NotifiesOfOperationCompletionOnThreadDecidedByEventScheduler()
+        public void NotifiesOfOperationCompletionOnThreadDecidedByEventContext()
         {
             // Need to marshal thread ids back to main thread, we can use TCS for that
             var schedulerThreadId = new TaskCompletionSource<int>();
@@ -326,7 +331,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             // Create a task scheduler that uses a single thread that reports its id at start
             var scheduler = CreateSingleThreadTaskScheduler(threadInit: () => schedulerThreadId.SetResult(GetCurrentThreadId()));
 
-            var asyncLoader = new AsyncLoaderTestImpl(scheduler);
+            var asyncLoader = new AsyncLoaderTestImpl(new TaskSchedulerSynchronizationContext(scheduler));
             asyncLoader.StatusChanged += (s, e) => { notificationThreadId.SetResult(GetCurrentThreadId()); };
 
             asyncLoader.PerformAsyncOperation(token => Task.FromResult(true));  // A succeeded task
@@ -342,7 +347,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
-        public void NotifiesOfOperationFailedOnThreadDecidedByEventScheduler()
+        public void NotifiesOfOperationFailedOnThreadDecidedByEventContext()
         {
             // Need to marshal thread ids back to main thread, we can use TCS for that
             var schedulerThreadId = new TaskCompletionSource<int>();
@@ -351,7 +356,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             // Create a task scheduler that uses a single thread that reports its id at start
             var scheduler = CreateSingleThreadTaskScheduler(threadInit: () => schedulerThreadId.SetResult(GetCurrentThreadId()));
 
-            var asyncLoader = new AsyncLoaderTestImpl(scheduler);
+            var asyncLoader = new AsyncLoaderTestImpl(new TaskSchedulerSynchronizationContext(scheduler));
             asyncLoader.StatusChanged += (s, e) => { notificationThreadId.SetResult(GetCurrentThreadId()); };
 
             asyncLoader.PerformAsyncOperation(token => FromException(new Exception()));  // A failed task
@@ -367,7 +372,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
-        public void NotifiesOfSpecialOperationCompletedOnThreadDecidedByEventScheduler()
+        public void NotifiesOfSpecialOperationCompletedOnThreadDecidedByEventContext()
         {
             // Need to marshal thread ids back to main thread, we can use TCS for that
             var schedulerThreadId = new TaskCompletionSource<int>();
@@ -376,7 +381,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             // Create a task scheduler that uses a single thread that reports its id at start
             var scheduler = CreateSingleThreadTaskScheduler(threadInit: () => schedulerThreadId.SetResult(GetCurrentThreadId()));
 
-            var asyncLoader = new AsyncLoaderTestImpl(scheduler);
+            var asyncLoader = new AsyncLoaderTestImpl(new TaskSchedulerSynchronizationContext(scheduler));
             asyncLoader.AsyncOperationCompletedTunnel += (s, e) => { notificationThreadId.SetResult(GetCurrentThreadId()); };
 
             asyncLoader.NotifySpecialOperationCompletedTunnel(true);
@@ -390,13 +395,14 @@ namespace Async.Model.UnitTest.AsyncLoaded
             // Handlers must be notified on scheduler thread
             Assert.That(notificationThreadId.Task.Result, Is.EqualTo(schedulerThreadId.Task.Result));
         }
-        #endregion
+        #endregion Event notification thread
 
         #region Returned task
         [Test]
         public void ReturnsTaskThatOnlyCompletesWhenEntireOperationIsComplete()
         {
             using (var postProcessPause = new ManualResetEventSlim(false))
+            using (var postProcessExecuting = new ManualResetEventSlim(false))
             {
                 var longTask = new TaskCompletionSource<bool>();
 
@@ -406,6 +412,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
                 // This post process step will wait until handle is signalled
                 Func<bool, CancellationToken, bool> processOp = (res, tok) =>
                 {
+                    postProcessExecuting.Set();  // signal that we have arrived at post process step
                     postProcessPause.Wait();
                     return true;
                 };
@@ -416,8 +423,9 @@ namespace Async.Model.UnitTest.AsyncLoaded
                 // Verify that returned task does not complete before async op is done
                 Assert.That(task.IsCompleted, Is.False);
 
-                // Complete async op -> operation should now wait on postProcessPause
+                // Complete async op, then wait for execution to reach post process step
                 longTask.SetResult(true);
+                postProcessExecuting.Wait();
 
                 // Verify that the task does not complete before the post-process step is done
                 Assert.That(task.IsCompleted, Is.False);
@@ -459,21 +467,20 @@ namespace Async.Model.UnitTest.AsyncLoaded
         [Test]
         public void ReturnsCompletedTaskWhenBusy()
         {
-            var longTask1 = new TaskCompletionSource<bool>();
-            var longTask2 = new TaskCompletionSource<bool>();
+            var longTask = new TaskCompletionSource<bool>();
             bool operationWasRunWhenBusy = false;
 
             var asyncLoader = new AsyncLoaderTestImpl();
 
             // Start an operation that will not finish until we say so
-            asyncLoader.PerformAsyncOperation(token => longTask1.Task);
+            asyncLoader.PerformAsyncOperation(token => longTask.Task);
 
             // Now try to start another operation
             // NOTE: It is important for the test that this task is guaranteed to not complete
             var task = asyncLoader.PerformAsyncOperation(token =>
             {
                 operationWasRunWhenBusy = true;
-                return longTask2.Task;
+                return TaskConstants<bool>.Never;
             });
 
             Assert.That(task.IsCompleted);
@@ -484,9 +491,9 @@ namespace Async.Model.UnitTest.AsyncLoaded
 
             // Cleanup - is this needed?
             asyncLoader.Cancel();
-            longTask1.SetResult(true);
+            longTask.SetResult(true);
         }
-        #endregion
+        #endregion Returned task
 
         #region Helpers
         internal static int GetCurrentThreadId()
@@ -529,10 +536,9 @@ namespace Async.Model.UnitTest.AsyncLoaded
                 }
             }
 
-            // Make sure event notifications are run synchronously by using CurrentThreadTaskScheduler
-            public AsyncLoaderTestImpl() : base(new CurrentThreadTaskScheduler(), CancellationToken.None) { }
+            public AsyncLoaderTestImpl() : base(CancellationToken.None) { }
 
-            public AsyncLoaderTestImpl(TaskScheduler eventScheduler) : base(eventScheduler, CancellationToken.None) { }
+            public AsyncLoaderTestImpl(SynchronizationContext eventContext) : base(eventContext, CancellationToken.None) { }
 
             public Task PerformAsyncOperation(Func<CancellationToken, Task<bool>> operation)
             {
@@ -549,6 +555,6 @@ namespace Async.Model.UnitTest.AsyncLoaded
                 base.NotifySpecialOperationCompleted(result);
             }
         }
-        #endregion
+        #endregion Helpers
     }
 }
