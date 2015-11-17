@@ -4,9 +4,11 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Schedulers;
 using Async.Model.AsyncLoaded;
+using Async.Model.Context;
 using Async.Model.Sequence;
 using Async.Model.TestExtensions;
 using FluentAssertions;
+using Nito.AsyncEx;
 using NSubstitute;
 using NUnit.Framework;
 // Because noone wants to type out this every time...
@@ -78,9 +80,12 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void ReplaceNotifiesOfChange()
         {
             IEnumerable<int> loadedInts = new[] { 2 };
-            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            loader.LoadAsync();
+            var loader = new ThreadSafeAsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventContext: new RunInlineSynchronizationContext());
+
+            loader.LoadAsync();  // load initial items
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -97,9 +102,12 @@ namespace Async.Model.UnitTest.AsyncLoaded
         public void ReplaceNotifiesOfEveryChangeMade()
         {
             IEnumerable<int> loadedInts = new[] { 2, 2, 2, 2 };
-            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            loader.LoadAsync();
+            var loader = new ThreadSafeAsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventContext: new RunInlineSynchronizationContext());
+
+            loader.LoadAsync();  // load initial items
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -115,7 +123,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         [Test]
         public void ReplaceDoesNotNotifyIfLoaderIsEmpty()
         {
-            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, eventScheduler: new CurrentThreadTaskScheduler());
+            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, eventContext: new RunInlineSynchronizationContext());
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
 
@@ -134,7 +142,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var loader = new ThreadSafeAsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(initialValues),
-                eventScheduler: new CurrentThreadTaskScheduler());
+                eventContext: new RunInlineSynchronizationContext());
             loader.LoadAsync();  // load initial values
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
@@ -173,8 +181,8 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var loader = new ThreadSafeAsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            loader.LoadAsync();
+                eventContext: new RunInlineSynchronizationContext());
+            loader.LoadAsync();  // load initial values
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -212,8 +220,8 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var loader = new ThreadSafeAsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            loader.LoadAsync();
+                eventContext: new RunInlineSynchronizationContext());
+            loader.LoadAsync();  // load initial values
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -241,8 +249,8 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var loader = new ThreadSafeAsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            loader.LoadAsync();
+                eventContext: new RunInlineSynchronizationContext());
+            loader.LoadAsync();  // load initial values
 
 
             // --- Perform ---
@@ -264,8 +272,8 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var loader = new ThreadSafeAsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            loader.LoadAsync();
+                eventContext: new RunInlineSynchronizationContext());
+            loader.LoadAsync();  // load initial values
 
 
             // --- Perform ---
@@ -294,7 +302,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var loader = new ThreadSafeAsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(initialValues),
-                eventScheduler: new CurrentThreadTaskScheduler());
+                eventContext: new RunInlineSynchronizationContext());
             loader.LoadAsync();  // load initial values
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
@@ -318,7 +326,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             var loader = new ThreadSafeAsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(initialValues),
-                eventScheduler: new CurrentThreadTaskScheduler());
+                eventContext: new RunInlineSynchronizationContext());
             loader.LoadAsync();  // load initial values
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
@@ -335,7 +343,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         [Test]
         public void ClearDoesNotNotifyIfNoChangesWereMade()
         {
-            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, eventScheduler: new CurrentThreadTaskScheduler());
+            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, eventContext: new RunInlineSynchronizationContext());
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
 

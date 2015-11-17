@@ -40,6 +40,8 @@
     <Compile Include="AsyncLoaded\IAsyncCollectionLoader.cs" />
     <Compile Include="AsyncLoaded\ThreadSafeAsyncLoader.cs" />
     <Compile Include="AsyncLoader.cs" />
+    <Compile Include="Context\RunInlineSynchronizationContext.cs" />
+    <Compile Include="Context\TaskSchedulerSynchronizationContext.cs" />
     <Compile Include="IAsyncCollection.cs" />
     <Compile Include="EntityTag.cs" />
     <Compile Include="AsyncLoaded\IAsyncItem.cs" />

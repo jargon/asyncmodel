@@ -26,7 +26,7 @@ namespace Async.Model
             Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync = null,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync = null,
             CancellationToken rootCancellationToken = default(CancellationToken),
-            TaskScheduler eventScheduler = null) : base(eventScheduler, rootCancellationToken)
+            SynchronizationContext eventContext = null) : base(eventContext, rootCancellationToken)
         {
             this.loadDataAsync = loadDataAsync;
             this.fetchUpdatesAsync = fetchUpdatesAsync;
@@ -85,7 +85,7 @@ namespace Async.Model
 
             return PerformAsyncOperation(() => { }, token => fetchUpdatesAsync(seq, token), PerformUpdatesInsideLock);
         }
-        #endregion
+        #endregion IAsyncCollectionLoader API
 
         #region IAsyncSeq API
         public virtual IEnumerator<TItem> GetEnumerator()
@@ -159,7 +159,7 @@ namespace Async.Model
                 NotifyCollectionChanged(ChangeType.Added, item);
             }
         }
-        #endregion
+        #endregion IAsyncSeq API
 
         #region Task continuations
         private IEnumerable<ItemChange<TItem>> InsertLoadedDataInsideLock(IEnumerable<TItem> loadedData, CancellationToken cancellationToken)

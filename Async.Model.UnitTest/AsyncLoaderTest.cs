@@ -4,8 +4,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Schedulers;
+using Async.Model.Context;
 using Async.Model.Sequence;
 using FluentAssertions;
+using Nito.AsyncEx;
 using NSubstitute;
 using NUnit.Framework;
 using IntChangesAlias = System.Collections.Generic.IEnumerable<Async.Model.IItemChange<int>>;
@@ -15,6 +17,11 @@ namespace Async.Model.UnitTest
     [TestFixture]
     public class AsyncLoaderTest
     {
+        // NOTE: Below you will find many calls to the async methods AsyncLoader.LoadAsync and AsyncLoader.UpdateAsync
+        // that are not awaited. This takes advantage of the fact that these methods will only be async when the
+        // delegates passed at construction are async. Otherwise they will complete synchronously and need not be
+        // awaited.
+
         [SetUp]
         public void BeforeEachTest()
         {
@@ -122,6 +129,60 @@ namespace Async.Model.UnitTest
             loader.ShouldAllBeEquivalentTo(new[] { 1 });
         }
 
+        [Test]
+        public async Task UpdateAsyncCanRemoveSingleItemFromLoader()
+        {
+            IEnumerable<int> originalItems = new int[] { 1 };
+            IEnumerable<ItemChange<int>> changes = new ItemChange<int>[] { new ItemChange<int>(ChangeType.Removed, 1) };
+
+            var loader = new AsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(originalItems),
+                fetchUpdatesAsync: (items, tok) => Task.FromResult(changes));
+            await loader.LoadAsync();
+            loader.Should().NotBeEmpty();  // sanity check
+
+            await loader.UpdateAsync();  // --- Perform ---
+
+            loader.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task UpdateAsyncDoesNotAddOrRemoveItemsForUnchangedItemChange()
+        {
+            IEnumerable<int> originalItems = new int[] { 1 };
+            IEnumerable<ItemChange<int>> changes = new ItemChange<int>[] { new ItemChange<int>(ChangeType.Unchanged, 1) };
+
+            var loader = new AsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(originalItems),
+                fetchUpdatesAsync: (items, tok) => Task.FromResult(changes));
+            await loader.LoadAsync();
+            loader.Should().Equal(new[] { 1 });  // sanity check
+
+            await loader.UpdateAsync();  // --- Perform ---
+
+            loader.Should().Equal(new[] { 1 });
+        }
+
+        [Test]
+        public async Task UpdateAsyncDoesNotAddOrRemoveItemsForUpdateItemChange()
+        {
+            IEnumerable<int> originalItems = new int[] { 1 };
+            IEnumerable<ItemChange<int>> changes = new ItemChange<int>[] { new ItemChange<int>(ChangeType.Updated, 1) };
+
+            var loader = new AsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(originalItems),
+                fetchUpdatesAsync: (items, tok) => Task.FromResult(changes));
+            await loader.LoadAsync();
+            loader.Should().Equal(new[] { 1 });  // sanity check
+
+            await loader.UpdateAsync();  // --- Perform ---
+
+            loader.Should().Equal(new[] { 1 });
+        }
+
         /// <summary>
         /// This is an important part of the AsyncLoader contract: it must allow the fetchUpdatesAsync delegate to
         /// return an empty sequence of item changes, since there may not be any changes.
@@ -146,7 +207,6 @@ namespace Async.Model.UnitTest
         /// This is an important part of the AsyncLoader contract: if items are Conj'ed during the update, they must be
         /// preserved, since they won't be part of the change calculation.
         /// </summary>
-        /// <returns></returns>
         [Test]
         public async Task UpdateAsyncPreservesItemsAddedDuringUpdate()
         {
@@ -171,6 +231,31 @@ namespace Async.Model.UnitTest
 
 
             loader.ShouldAllBeEquivalentTo(new[] { 1, 2, 3 });
+        }
+
+        /// <summary>
+        /// This demonstrates a useful property of <see cref="AsyncLoader{TItem}.UpdateAsync"/>: it will retain the
+        /// order of items in the collection. All new items are added at the end.
+        /// </summary>
+        [Test]
+        public async Task UpdateAsyncRetainsOrder()
+        {
+            IEnumerable<int> originalItems = new int[] { 1, 2, 3 };
+            IEnumerable<ItemChange<int>> changes = new ItemChange<int>[]
+            {
+                new ItemChange<int>(ChangeType.Updated, 2),
+                new ItemChange<int>(ChangeType.Added, 4)
+            };
+
+            var loader = new AsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(originalItems),
+                fetchUpdatesAsync: (items, tok) => Task.FromResult(changes));
+            await loader.LoadAsync();  // load original items
+
+            await loader.UpdateAsync();  // --- Perform ---
+
+            loader.Should().Equal(new[] { 1, 2, 3, 4 });
         }
 
         /// <summary>
@@ -200,7 +285,7 @@ namespace Async.Model.UnitTest
             var loader = new AsyncLoader<int>(
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems.AsEnumerable()),
-                eventScheduler: new CurrentThreadTaskScheduler());
+                eventContext: new RunInlineSynchronizationContext());
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -222,7 +307,7 @@ namespace Async.Model.UnitTest
             var loader = new AsyncLoader<Item>(
                 seqFactory: Seq.ListBased,
                 loadDataAsync: t => Task.FromResult(loadedItems),
-                eventScheduler: new CurrentThreadTaskScheduler());
+                eventContext: new RunInlineSynchronizationContext());
 
             // Simulate an external consumer of this collection
             IAsyncCollection<IItem> externalView = loader;
@@ -261,7 +346,7 @@ namespace Async.Model.UnitTest
             var loadFunc = Substitute.For<Func<CancellationToken, Task<IEnumerable<int>>>>();
             loadFunc.Invoke(Arg.Any<CancellationToken>()).Returns(Task.FromResult(initialItems), Task.FromResult(loadedItems));
 
-            var loader = new AsyncLoader<int>(Seq.ListBased, loadDataAsync: loadFunc, eventScheduler: new CurrentThreadTaskScheduler());
+            var loader = new AsyncLoader<int>(Seq.ListBased, loadDataAsync: loadFunc, eventContext: new RunInlineSynchronizationContext());
             loader.LoadAsync();  // initial load
             loader.CollectionChanged += (s, e) => actualChanges.AddRange(e);  // add all emitted changes to a list
 
@@ -280,7 +365,7 @@ namespace Async.Model.UnitTest
             var loader = new AsyncLoader<int>(
                 Seq.ListBased,
                 loadDataAsync: tok => Task.FromResult(loadedItems),
-                eventScheduler: new CurrentThreadTaskScheduler());
+                eventContext: new RunInlineSynchronizationContext());
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -310,7 +395,7 @@ namespace Async.Model.UnitTest
         [Test]
         public void CollectionChangedHandlerInvokedForConj()
         {
-            var loader = new AsyncLoader<int>(Seq.ListBased, eventScheduler: new CurrentThreadTaskScheduler());
+            var loader = new AsyncLoader<int>(Seq.ListBased, eventContext: new RunInlineSynchronizationContext());
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
 
@@ -325,7 +410,7 @@ namespace Async.Model.UnitTest
         [Test]
         public async Task CollectionChangedHandlerInvokedForConjAsync()
         {
-            var loader = new AsyncLoader<int>(Seq.ListBased, eventScheduler: new CurrentThreadTaskScheduler());
+            var loader = new AsyncLoader<int>(Seq.ListBased, eventContext: new RunInlineSynchronizationContext());
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
 
@@ -341,9 +426,12 @@ namespace Async.Model.UnitTest
         public void CollectionChangedHandlerInvokedForTake()
         {
             IEnumerable<int> loadedInts = new[] { 42 };
-            var loader = new AsyncLoader<int>(Seq.ListBased, loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            loader.LoadAsync();
+            var loader = new AsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventContext: new RunInlineSynchronizationContext());
+
+            loader.LoadAsync();  // load initial items
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;
@@ -360,9 +448,12 @@ namespace Async.Model.UnitTest
         public async Task CollectionChangedHandlerInvokedForTakeAsync()
         {
             IEnumerable<int> loadedInts = new[] { 35 };
-            var loader = new AsyncLoader<int>(Seq.ListBased, loadDataAsync: tok => Task.FromResult(loadedInts),
-                eventScheduler: new CurrentThreadTaskScheduler());
-            await loader.LoadAsync();
+            var loader = new AsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventContext: new RunInlineSynchronizationContext());
+
+            await loader.LoadAsync();  // load initial items
 
             var listener = Substitute.For<CollectionChangedHandler<int>>();
             loader.CollectionChanged += listener;

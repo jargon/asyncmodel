@@ -37,7 +37,7 @@ namespace Async.Model.AsyncLoaded
             Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync = null,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync = null,
             CancellationToken rootCancellationToken = default(CancellationToken),
-            TaskScheduler eventScheduler = null) : base(seqFactory, loadDataAsync, fetchUpdatesAsync, rootCancellationToken, eventScheduler)
+            SynchronizationContext eventContext = null) : base(seqFactory, loadDataAsync, fetchUpdatesAsync, rootCancellationToken, eventContext)
         {
             // Do nothing: base constructor handles everything
         }
