@@ -1,12 +1,11 @@
-﻿using Async.Model.AsyncLoaded;
-using Async.Model.Sequence;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Async.Model.AsyncLoaded;
+using Async.Model.Sequence;
 using Nito.AsyncEx;
 
 namespace Async.Model
