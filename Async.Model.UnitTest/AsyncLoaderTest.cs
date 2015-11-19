@@ -298,12 +298,19 @@ namespace Async.Model.UnitTest
                 Seq.ListBased,
                 loadDataAsync: _ => Task.FromResult(originalItems),
                 fetchUpdatesAsync: (_, __) => Task.FromResult(changes),
-                identityComparer: new IntWrapperComparer());
+                identityComparer: new IntWrapperComparer(),
+                eventContext: new RunInlineSynchronizationContext());
             await loader.LoadAsync();  // load original items
+
+            loader.CollectionChanged += (s, e) =>
+            {
+                // Verify that the resulting change was exactly the incoming change
+                e.Should().Equal(changes);
+            };
 
             await loader.UpdateAsync();  // --- Perform ---
 
-            // Since the update matches the IntWrapper(2) already in the collection, it will be updated instead of adding a new one
+            // Verify that no changes to the int values in the collection were made
             loader.Should().Equal(new IntWrapper[] { 1, 2, 3 }, (x, y) => x.Value == y.Value);
         }
 

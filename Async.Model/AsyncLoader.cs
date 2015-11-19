@@ -198,6 +198,9 @@ namespace Async.Model
             // 2. We ignore the item change. This could make our code simpler, because we might not need as much
             //    coordination between what happens in the UI and what happens in asynchronous background operations.
             //    The disadvantage of this approach is that it could hide bugs.
+            // 3. Do as now, ignore the problem. This has the advantage of simplicity. The problem is that updates to
+            //    non-existing items will result in the addition of those items, which is pretty confusing. Making
+            //    matters even worse, the additions are reported as updates in the CollectionChanged notification.
 
             // Filter out removed items
             var newItems = changes
