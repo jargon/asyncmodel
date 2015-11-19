@@ -18,6 +18,7 @@ namespace Async.Model
         private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
 
         protected readonly IAsyncSeq<TItem> seq;
+        protected readonly IEqualityComparer<TItem> identityComparer;
 
 
         public AsyncLoader(
@@ -25,6 +26,7 @@ namespace Async.Model
             Func<IEnumerable<TItem>, ISeq<TItem>> seqFactory,
             Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync = null,
             Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync = null,
+            IEqualityComparer<TItem> identityComparer = null,
             CancellationToken rootCancellationToken = default(CancellationToken),
             SynchronizationContext eventContext = null) : base(eventContext, rootCancellationToken)
         {
@@ -38,6 +40,8 @@ namespace Async.Model
 
             this.seqFactory = asyncSeqFactory;
             this.seq = asyncSeqFactory(Enumerable.Empty<TItem>());
+
+            this.identityComparer = identityComparer ?? EqualityComparer<TItem>.Default;
         }
 
         #region IAsyncCollectionLoader API
@@ -182,8 +186,19 @@ namespace Async.Model
             // NOTE: We preserve any items from seq not found in fetchedUpdates, since they must have been Conj'ed
             var changes = seq
                 .FullOuterJoin(fetchedUpdates, i => i, u => u.Item,
-                    (i, u, k) => u ?? new ItemChange<TItem>(ChangeType.Unchanged, i))
+                    (i, u, k) => u ?? new ItemChange<TItem>(ChangeType.Unchanged, i), identityComparer)
                 .ToArray();  // materialize to prevent multiple enumerations of source
+
+            // TODO: What do we do about invalid item changes, such as update or removal of a non-existing item?
+            // We have several options:
+            // 1. We throw an exception. This has the advantage of helping to uncover bugs. But there are problems.
+            //    First, if we throw an exception directly in this method, it will be caught by AsyncLoaderBase and
+            //    treated as a failed async operation. To solve this, we could post a callback on the event
+            //    synchronization context that throws the exception on the UI thread. Second, treating these invalid
+            //    item changes as errors could turn otherwise benign race conditions into fatal errors.
+            // 2. We ignore the item change. This could make our code simpler, because we might not need as much
+            //    coordination between what happens in the UI and what happens in asynchronous background operations.
+            //    The disadvantage of this approach is that it could hide bugs.
 
             // Filter out removed items
             var newItems = changes
@@ -203,9 +218,9 @@ namespace Async.Model
             NotifySpecialOperationCompleted(changes);
         }
 
-        protected void NotifyCollectionChanged(ItemChange<TItem>[] changes)
+        protected void NotifyCollectionChanged(IEnumerable<ItemChange<TItem>> changes)
         {
-            if (changes.Length > 0)
+            if (changes.Any())
             {
                 // Only notify if actual changes were made
                 NotifySpecialOperationCompleted(changes);

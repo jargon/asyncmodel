@@ -154,6 +154,64 @@ namespace Async.Model.UnitTest.AsyncLoaded
 
             listener.DidNotReceive().Invoke(loader, Arg.Any<IntChangesAlias>());
         }
+
+        // CODESTD: Utility classes kept with the few tests that use them instead of the normal location
+
+        /// <summary>
+        /// A class that wraps integers but does NOT override <see cref="object.Equals(object)"/>. This means that
+        /// variables of this type will only be considered equal, if they point to the same instance.
+        /// </summary>
+        private class IntWrapper
+        {
+            public readonly int Value;
+
+            private IntWrapper(int value) { this.Value = value; }
+            public override string ToString() { return this.Value.ToString(); }
+
+            public static implicit operator IntWrapper(int value) { return new IntWrapper(value); }
+        }
+
+        /// <summary>A comparer of <see cref="IntWrapper"/> instances that compares the underlying int values.</summary>
+        private class IntWrapperComparer : IEqualityComparer<IntWrapper>
+        {
+            public bool Equals(IntWrapper x, IntWrapper y) { return x.Value == y.Value; }
+            public int GetHashCode(IntWrapper obj) { return obj.Value.GetHashCode(); }
+        }
+
+        [Test]
+        public void ReplaceUsesIdentityComparerGivenAtConstruction()
+        {
+            var collectionChangedHandler = Substitute.For<CollectionChangedHandler<IntWrapper>>();
+
+            IEnumerable<IntWrapper> originalItems = new IntWrapper[] { 1, 2, 3 };
+            IntWrapper replacement = 2;
+
+            IEnumerable<ItemChange<IntWrapper>> expectedChanges = new ItemChange<IntWrapper>[]
+            {
+                new ItemChange<IntWrapper>(ChangeType.Updated, replacement)
+            };
+
+            var loader = new ThreadSafeAsyncLoader<IntWrapper>(
+                Seq.ListBased,
+                loadDataAsync: _ => Task.FromResult(originalItems),
+                identityComparer: new IntWrapperComparer(),
+                eventContext: new RunInlineSynchronizationContext());
+            loader.LoadAsync();  // load original items
+
+            loader.CollectionChanged += collectionChangedHandler;
+            loader.CollectionChanged += (s, e) =>
+            {
+                // Verify that the expected update was made
+                e.Should().Equal(expectedChanges);
+            };
+
+
+            loader.Replace(replacement, replacement);  // --- Perform ---
+
+
+            // Verify that changes were made by checking for collection changed events
+            collectionChangedHandler.Received().Invoke(loader, Arg.Any<IEnumerable<ItemChange<IntWrapper>>>());
+        }
         #endregion Replace
 
         #region ReplaceAll
@@ -197,41 +255,66 @@ namespace Async.Model.UnitTest.AsyncLoaded
                 changes => changes.Should().BeEquivalentTo(expectedChanges)));
         }
 
-        /// <summary>
-        /// This test illustrates an important limitation of ThreadSafeAsyncLoader: since it cannot
-        /// know in general whether two objects that test equal are identical or just similar, it
-        /// makes the conservative choice of always assuming that an item present in both the old
-        /// and new sequences have been updated. This should not cause correctness problems, but
-        /// could potentially cause performance issues.
-        /// </summary>
         [Test]
-        [Category("Limitations")]
-        public void ReplaceAllIssuesUpdateNotificationsForUnchangedItems()
+        public void ReplaceAllUsesIdentityComparerGivenAtConstruction()
         {
-            IEnumerable<int> loadedInts = new int[] { 1 };
-            var replacements = new int[] { 1, 2 };
+            IEnumerable<IntWrapper> originalItems = new IntWrapper[] { 1, 2, 3 };
+            var replacements = new IntWrapper[] { 1, 3 };
 
-            var expectedChanges = new IItemChange<int>[]
+            // NOTE: Due to conservate update check, unchanged items will appear as item changes of type update
+            // NOTE2: Need to use the actual instances, since IntWrapper uses reference equality
+            var expectedChanges = new ItemChange<IntWrapper>[]
             {
-                new ItemChange<int>(ChangeType.Updated, 1),
-                new ItemChange<int>(ChangeType.Added, 2)
+                new ItemChange<IntWrapper>(ChangeType.Updated, replacements[0]),
+                new ItemChange<IntWrapper>(ChangeType.Updated, replacements[1]),
+                new ItemChange<IntWrapper>(ChangeType.Removed, originalItems.ElementAt(1))
             };
 
-            var loader = new ThreadSafeAsyncLoader<int>(
+            var loader = new ThreadSafeAsyncLoader<IntWrapper>(
                 Seq.ListBased,
-                loadDataAsync: tok => Task.FromResult(loadedInts),
+                loadDataAsync: _ => Task.FromResult(originalItems),
+                identityComparer: new IntWrapperComparer(),
                 eventContext: new RunInlineSynchronizationContext());
             loader.LoadAsync();  // load initial values
-
-            var listener = Substitute.For<CollectionChangedHandler<int>>();
-            loader.CollectionChanged += listener;
+            loader.CollectionChanged += (s, e) =>
+            {
+                // Verify that the actual changes match the expected changes
+                e.Should().BeEquivalentTo(expectedChanges);
+            };
 
 
             loader.ReplaceAll(replacements);  // --- Perform ---
+        }
+
+        private class IntUpdateComparer : IEqualityComparer<int>
+        {
+            public bool Equals(int x, int y) { return x == y; }
+            public int GetHashCode(int obj) { return obj.GetHashCode(); }
+        }
+
+        [Test]
+        public void ReplaceAllUsesUpdateComparerGivenAtConstruction()
+        {
+            IEnumerable<int> originalItems = new int[] { 1, 2, 3 };
+            var replacements = new int[] { 1, 3 };
+
+            // Since equal int values will now count as unchanged, we do not expect item changes that are updates
+            var expectedChanges = new ItemChange<int>[] { new ItemChange<int>(ChangeType.Removed, 2) };
+
+            var loader = new ThreadSafeAsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: _ => Task.FromResult(originalItems),
+                updateComparer: new IntUpdateComparer(),
+                eventContext: new RunInlineSynchronizationContext());
+            loader.LoadAsync();  // load initial values
+            loader.CollectionChanged += (s, e) =>
+            {
+                // Verify that the actual changes match the expected changes
+                e.Should().BeEquivalentTo(expectedChanges);
+            };
 
 
-            listener.Received().Invoke(loader, Fluent.Match<IntChangesAlias>(
-                changes => changes.Should().BeEquivalentTo(expectedChanges)));
+            loader.ReplaceAll(replacements);  // --- Perform ---
         }
 
         /// <summary>

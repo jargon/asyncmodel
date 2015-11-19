@@ -103,6 +103,10 @@ namespace Async.Model.UnitTest
             loader.Should().BeEquivalentTo(new[] { 1, 2, 3, 4 });
         }
 
+        // NOTE: The following calls to UpdateAsync use await even though they will run synchronously without them (as
+        // mentioned at the top of this file). This will allow any exceptions caught to propagate out of the call. In
+        // this way, we don't need to check the Exception property or install an AsyncOperationFailed handler.
+
         [Test]
         public async Task CanUpdateEmptyLoaderWithEmptyChanges()
         {
@@ -256,6 +260,51 @@ namespace Async.Model.UnitTest
             await loader.UpdateAsync();  // --- Perform ---
 
             loader.Should().Equal(new[] { 1, 2, 3, 4 });
+        }
+
+        // CODESTD: Utility classes kept with the few tests that use them instead of the normal location
+
+        /// <summary>
+        /// A class that wraps integers but does NOT override <see cref="object.Equals(object)"/>. This means that
+        /// variables of this type will only be considered equal, if they point to the same instance.
+        /// </summary>
+        private class IntWrapper
+        {
+            public readonly int Value;
+
+            private IntWrapper(int value) { this.Value = value; }
+            public override string ToString() { return this.Value.ToString(); }
+
+            public static implicit operator IntWrapper(int value) { return new IntWrapper(value); }
+        }
+
+        /// <summary>A comparer of <see cref="IntWrapper"/> instances that compares the underlying int values.</summary>
+        private class IntWrapperComparer : IEqualityComparer<IntWrapper>
+        {
+            public bool Equals(IntWrapper x, IntWrapper y) { return x.Value == y.Value; }
+            public int GetHashCode(IntWrapper obj) { return obj.Value.GetHashCode(); }
+        }
+
+        [Test]
+        public async Task UpdateAsyncUsesIdentityComparerGivenAtConstruction()
+        {
+            IEnumerable<IntWrapper> originalItems = new IntWrapper[] { 1, 2, 3 };
+            IEnumerable<ItemChange<IntWrapper>> changes = new ItemChange<IntWrapper>[]
+            {
+                new ItemChange<IntWrapper>(ChangeType.Updated, 2)
+            };
+
+            var loader = new AsyncLoader<IntWrapper>(
+                Seq.ListBased,
+                loadDataAsync: _ => Task.FromResult(originalItems),
+                fetchUpdatesAsync: (_, __) => Task.FromResult(changes),
+                identityComparer: new IntWrapperComparer());
+            await loader.LoadAsync();  // load original items
+
+            await loader.UpdateAsync();  // --- Perform ---
+
+            // Since the update matches the IntWrapper(2) already in the collection, it will be updated instead of adding a new one
+            loader.Should().Equal(new IntWrapper[] { 1, 2, 3 }, (x, y) => x.Value == y.Value);
         }
 
         /// <summary>
