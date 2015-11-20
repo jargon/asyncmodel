@@ -464,6 +464,25 @@ namespace Async.Model.UnitTest.AsyncLoaded
             Assert.That(task.Exception.InnerException, Is.EqualTo(exception));
         }
 
+        /// <summary>
+        /// This test shows an important feature for testing: if an event handler throws an exception and the event
+        /// context runs post callbacks inline, the task returned from <see cref="AsyncLoaderBase{TLoadResult}.PerformAsyncOperation{TResult}(Action, Func{CancellationToken, Task{TResult}}, Func{TResult, CancellationToken, TLoadResult})"/>
+        /// will fail with the same exception. This means tests can use assertions inside event handlers and the raised
+        /// exceptions will propagate out of the perform call, as long as it is awaited.
+        /// </summary>
+        [Test]
+        public void ReturnsTaskThatFailsIfEventNotificationFailsWithInlineEventContext()
+        {
+            var exception = new Exception();
+
+            var asyncLoader = new AsyncLoaderTestImpl(new RunInlineSynchronizationContext());
+            asyncLoader.AsyncOperationCompletedTunnel += (s, e) => { throw exception; };
+            var task = asyncLoader.PerformAsyncOperation(tok => Task.FromResult(true), (res, tok) => { return true; });
+
+            Assert.That(task.IsFaulted, Is.True);
+            Assert.That(task.Exception.InnerException, Is.EqualTo(exception));
+        }
+
         [Test]
         public void ReturnsCompletedTaskWhenBusy()
         {

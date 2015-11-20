@@ -193,19 +193,12 @@ namespace Async.Model.AsyncLoaded
                 return;
 
             TLoadResult notificationData;
-            AsyncStatus oldStatus;
 
             using (mutex.Lock())
             {
                 currentOperationCancelSource.Token.ThrowIfCancellationRequested();
 
                 notificationData = processResult(operationTask.Result, currentOperationCancelSource.Token);
-
-                oldStatus = status;
-                Debug.Assert(oldStatus == AsyncStatus.Loading);
-
-                status = AsyncStatus.Ready;
-                lastStartedOperation.SetResult();
 
                 // Perform cleanup
                 currentOperationCancelSource.Dispose();
@@ -214,6 +207,17 @@ namespace Async.Model.AsyncLoaded
 
             // Report result
             NotifyOperationCompleted(notificationData);
+
+            // Now update status and complete task
+            // NOTE: We wait until after notifications in order to simplify tests - if an event handler throws an
+            // exception, it will be reflected in the task status
+            using (mutex.Lock())
+            {
+                Debug.Assert(status == AsyncStatus.Loading);
+
+                status = AsyncStatus.Ready;
+                lastStartedOperation.SetResult();
+            }
         }
 
         private void TaskFailedOrCancelled(Task previous)
