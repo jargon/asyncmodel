@@ -40,10 +40,26 @@ namespace Async.Model.Sequence
                 return item;
             }
 
+            public void Replace(T oldItem, T newItem)
+            {
+                var comparer = EqualityComparer<T>.Default;
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (comparer.Equals(list[i], oldItem))
+                        list[i] = newItem;
+                }
+            }
+
             public void ReplaceAll(IEnumerable<T> newItems)
             {
                 list.Clear();
                 list.AddRange(newItems);
+            }
+
+            public void Clear()
+            {
+                list.Clear();
             }
 
             public IEnumerator<T> GetEnumerator()
@@ -84,9 +100,19 @@ namespace Async.Model.Sequence
                 return queue.Dequeue();
             }
 
+            public void Replace(T oldItem, T newItem)
+            {
+                ReplaceAll(queue.Replace(oldItem, newItem));
+            }
+
             public void ReplaceAll(IEnumerable<T> newItems)
             {
                 this.queue = new Queue<T>(newItems);
+            }
+
+            public void Clear()
+            {
+                queue.Clear();
             }
 
             public IEnumerator<T> GetEnumerator()
@@ -138,9 +164,19 @@ namespace Async.Model.Sequence
                 innerSeq.Conj(item);
             }
 
+            public void Replace(T oldItem, T newItem)
+            {
+                innerSeq.Replace(oldItem, newItem);
+            }
+
             public void ReplaceAll(IEnumerable<T> newItems)
             {
                 innerSeq.ReplaceAll(newItems);
+            }
+
+            public void Clear()
+            {
+                innerSeq.Clear();
             }
 
             public IEnumerator<T> GetEnumerator()

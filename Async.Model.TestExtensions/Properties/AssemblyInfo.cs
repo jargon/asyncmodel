@@ -4,16 +4,14 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyProduct("Async.Model.UnitTest")]
-[assembly: AssemblyTitle("Async.Model.UnitTest")]
+[assembly: AssemblyProduct("Async.Model.TestExtensions")]
+[assembly: AssemblyTitle("Async.Model.TestExtensions")]
+[assembly: AssemblyDescription("Test extensions for asynchronous domain models.")]
 
 // Setting ComVisible to false makes the types in this assembly not visible 
 // to COM components.  If you need to access a type in this assembly from 
 // COM, set the ComVisible attribute to true on that type.
 [assembly: ComVisible(false)]
-
-// The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("f2fdcf26-e207-4ad6-8bc9-b7db442eff1f")]
 
 // Version information for an assembly consists of the following four values:
 //

@@ -8,12 +8,13 @@ namespace Async.Model.AsyncLoaded
 {
     public abstract class AsyncLoaderBase<TLoadResult> : IAsyncLoaded
     {
-        /// <summary>The scheduler used for raising events. This ultimately decides which thread the event notification is run on.</summary>
-        protected readonly TaskScheduler eventScheduler;
+        /// <summary>The <see cref="SynchronizationContext"/> used to post event notifications on.</summary>
+        protected readonly SynchronizationContext eventContext;
 
         /// <summary>The root cancellation token this loader was initialized with. Allows for grouped cancellation.</summary>
         protected readonly CancellationToken rootCancellationToken;
 
+        // TODO: make mutex a plain object and switch to use lock keyword: we never use the async feature anyway and we want reentrancy
         /// <summary>A lock that can be taken both synchronously and asynchronously. This lock should always be used when accessing mutable fields.</summary>
         /// <remarks>An AsyncLock is NOT reentrant, so subclasses must be careful to only take it when it is known to not already be held.</remarks>
         protected readonly AsyncLock mutex = new AsyncLock();
@@ -32,14 +33,9 @@ namespace Async.Model.AsyncLoaded
 
         protected AsyncLoaderBase(CancellationToken rootCancellationToken) : this(null, rootCancellationToken) { }
 
-        protected AsyncLoaderBase(TaskScheduler eventScheduler, CancellationToken rootCancellationToken)
+        protected AsyncLoaderBase(SynchronizationContext eventContext, CancellationToken rootCancellationToken)
         {
-            if (eventScheduler == null)
-            {
-                eventScheduler = (SynchronizationContext.Current == null) ? TaskScheduler.Current : TaskScheduler.FromCurrentSynchronizationContext();
-            }
-
-            this.eventScheduler = eventScheduler;
+            this.eventContext = eventContext ?? SynchronizationContext.Current ?? new SynchronizationContext();
             this.rootCancellationToken = rootCancellationToken;
         }
 
@@ -99,8 +95,36 @@ namespace Async.Model.AsyncLoaded
             }
         }
 
-        protected Task PerformAsyncOperation<TResult>(Func<CancellationToken, Task<TResult>> asyncOperation, Func<TResult, CancellationToken, TLoadResult> processResult)
+        /// <summary>
+        /// Starts an asynchronous operation if one is not already running and returns a task representing its
+        /// progress. This is the main method subclasses are expected to expose in their own specific ways to clients.
+        /// This method takes care of all the mechanics in regards to updating the status and notifying listeners.
+        /// </summary>
+        /// <typeparam name="TResult">The result type of the operation.</typeparam>
+        /// <param name="prepareOperation">
+        /// An action performed under lock after it has been decided that the operation should proceed (no async
+        /// operation currently in progress).
+        /// </param>
+        /// <param name="asyncOperation">
+        /// The asynchronous operation to perform. It is up to the operation to ensure asynchronous behaviour: this
+        /// method will not attempt to force execution on another thread. This operation is NOT performed under lock.
+        /// </param>
+        /// <param name="processResult">
+        /// A function to perform on the result of the asynchronous operation, unless the operation is cancelled or
+        /// fails. Performed under lock.
+        /// </param>
+        /// <returns>
+        /// A task that will complete when the overall operation including post-processing has completed. Any exception
+        /// encountered by the operation will be propagated to the task and available via the Exception property. If
+        /// the operation is cancelled, the task will reflect this in its Status property.
+        /// </returns>
+        protected Task PerformAsyncOperation<TResult>(
+            Action prepareOperation,
+            Func<CancellationToken, Task<TResult>> asyncOperation,
+            Func<TResult, CancellationToken, TLoadResult> processResult)
         {
+
+            // These all need to be read under lock but used outside lock
             AsyncStatus oldStatus;
             TaskCompletionSource overallOperation;
             CancellationToken cancellationToken;
@@ -119,8 +143,11 @@ namespace Async.Model.AsyncLoaded
                 status = AsyncStatus.Loading;
                 lastStartedOperation = overallOperation = new TaskCompletionSource();
                 currentOperationCancelSource = CancellationTokenSource.CreateLinkedTokenSource(rootCancellationToken);
-
+                
                 cancellationToken = currentOperationCancelSource.Token;
+
+                // Prepare for operation inside lock _after_ it has been determined that operation should proceed
+                prepareOperation();
             }
 
             NotifyOperationStarted(oldStatus);
@@ -152,19 +179,11 @@ namespace Async.Model.AsyncLoaded
 
         protected void NotifySpecialOperationCompleted(TLoadResult result)
         {
-            var operationCompletedHandler = AsyncOperationCompleted;
-
-            if (operationCompletedHandler == null)
-                return;
-
-            // Perform notification on event scheduler
-            Task.Factory.StartNew(() =>
-            {
-                if (operationCompletedHandler != null)
-                    operationCompletedHandler(this, result);
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            // Delegate to private method, so we can group implementation code together but also group API methods together
+            NotifySpecialOperationCompletedCore(result);
         }
 
+        #region Continuations
         private void ProcessResultAndUpdateStatus<TResult>(Task<TResult> operationTask, Func<TResult, CancellationToken, TLoadResult> processResult)
         {
             Debug.Assert(operationTask.IsCompleted);
@@ -174,19 +193,12 @@ namespace Async.Model.AsyncLoaded
                 return;
 
             TLoadResult notificationData;
-            AsyncStatus oldStatus;
 
             using (mutex.Lock())
             {
                 currentOperationCancelSource.Token.ThrowIfCancellationRequested();
 
                 notificationData = processResult(operationTask.Result, currentOperationCancelSource.Token);
-
-                oldStatus = status;
-                Debug.Assert(oldStatus == AsyncStatus.Loading);
-
-                status = AsyncStatus.Ready;
-                lastStartedOperation.SetResult();
 
                 // Perform cleanup
                 currentOperationCancelSource.Dispose();
@@ -195,6 +207,17 @@ namespace Async.Model.AsyncLoaded
 
             // Report result
             NotifyOperationCompleted(notificationData);
+
+            // Now update status and complete task
+            // NOTE: We wait until after notifications in order to simplify tests - if an event handler throws an
+            // exception, it will be reflected in the task status
+            using (mutex.Lock())
+            {
+                Debug.Assert(status == AsyncStatus.Loading);
+
+                status = AsyncStatus.Ready;
+                lastStartedOperation.SetResult();
+            }
         }
 
         private void TaskFailedOrCancelled(Task previous)
@@ -234,7 +257,9 @@ namespace Async.Model.AsyncLoaded
             // Report result
             NotifyOperationFailedOrCancelled(oldStatus, newStatus, locExc);
         }
+        #endregion Continuations
 
+        #region Notifications
         private void NotifyOperationStarted(AsyncStatus oldStatus)
         {
             // Contract
@@ -244,14 +269,28 @@ namespace Async.Model.AsyncLoaded
             if (statusChangeHandler == null)
                 return;
 
-            // Perform notification on event scheduler
+            // Post notification to event context
             // NOTE: The compiler transforms the lambda to an inner class with a field for "this", so using "this"
-            // inside the lambda is fine and will refer to this class as expected
+            // inside the lambda is fine and will refer to this class instance as expected
             // See: http://stackoverflow.com/questions/11103745/c-sharp-lambdas-and-this-variable-scope
-            Task.Factory.StartNew(() =>
+            eventContext.Post(dummyState =>
             {
                 statusChangeHandler(this, new AsyncStatusTransition(oldStatus, AsyncStatus.Loading));
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            }, null);
+        }
+
+        private void NotifySpecialOperationCompletedCore(TLoadResult notifData)
+        {
+            var operationCompletedHandler = AsyncOperationCompleted;
+
+            if (operationCompletedHandler == null)
+                return;
+
+            // Post notification to event context
+            eventContext.Post(dummyState =>
+            {
+                operationCompletedHandler(this, notifData);
+            }, null);
         }
 
         private void NotifyOperationCompleted(TLoadResult notifData)
@@ -262,15 +301,15 @@ namespace Async.Model.AsyncLoaded
             if (statusChangeHandler == null && operationCompletedHandler == null)
                 return;
 
-            // Perform notification on event scheduler
-            Task.Factory.StartNew(() =>
+            // Post notifications to event context
+            eventContext.Post(dummyState =>
             {
                 if (statusChangeHandler != null)
                     statusChangeHandler(this, new AsyncStatusTransition(AsyncStatus.Loading, AsyncStatus.Ready));
 
                 if (operationCompletedHandler != null)
                     operationCompletedHandler(this, notifData);
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            }, null);
         }
 
         private void NotifyOperationFailedOrCancelled(AsyncStatus oldStatus, AsyncStatus newStatus, AggregateException exception)
@@ -281,11 +320,12 @@ namespace Async.Model.AsyncLoaded
             var statusChangeHandler = StatusChanged;
             var operationFailedHandler = AsyncOperationFailed;
 
+            // Early return if we have no work to be done
             if (statusChangeHandler == null && (operationFailedHandler == null || exception == null))
                 return;
 
-            // Perform notification on event scheduler
-            Task.Factory.StartNew(() =>
+            // Post notifications to event context
+            eventContext.Post(state =>
             {
                 if (statusChangeHandler != null)
                     statusChangeHandler(this, new AsyncStatusTransition(oldStatus, newStatus));
@@ -299,7 +339,8 @@ namespace Async.Model.AsyncLoaded
                 // Fire event for each exception
                 foreach (var exc in exception.InnerExceptions)
                     operationFailedHandler(this, exc);
-            }, CancellationToken.None, TaskCreationOptions.None, eventScheduler);
+            }, null);
         }
+        #endregion Notifications
     }
 }
