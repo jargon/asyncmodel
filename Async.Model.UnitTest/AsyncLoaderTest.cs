@@ -29,6 +29,28 @@ namespace Async.Model.UnitTest
             FluentAssertions.AssertionOptions.AssertEquivalencyUsing(options => options.ComparingEnumsByName());
         }
 
+        /// <summary>
+        /// This tests an important property of the <see cref="AsyncLoader{TItem}"/> constructor: when given a seq
+        /// factory that produces async seqs, it must NOT wrap the resulting seq by calling
+        /// <see cref="Seq.AsAsync{T}(ISeq{T})"/>. Otherwise the cancellation token will be silently ignored as well as
+        /// changing the semantics from async to synchronous.
+        /// </summary>
+        [Test]
+        public async Task DoesNotWrapAsyncSeqFactory()
+        {
+            var seq = Substitute.For<IAsyncSeq<string>>();
+
+            var loader = new AsyncLoader<string>(seqFactory: l => seq);
+
+
+            await loader.TakeAsync(CancellationToken.None);  // --- Perform ---
+
+
+            // If the factory is wrapped, a TakeAsync on loader will end up calling Take on seq
+            seq.DidNotReceive().Take();
+            await seq.Received().TakeAsync(Arg.Any<CancellationToken>());
+        }
+
         [Test]
         public void CanLoadEmptyList()
         {

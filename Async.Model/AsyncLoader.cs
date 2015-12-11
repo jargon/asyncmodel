@@ -12,7 +12,6 @@ namespace Async.Model
 {
     public class AsyncLoader<TItem> : AsyncLoaderBase<IEnumerable<ItemChange<TItem>>>, IAsyncCollectionLoader<TItem>
     {
-        private readonly Func<IEnumerable<TItem>, IAsyncSeq<TItem>> seqFactory;
         private readonly Func<CancellationToken, Task<IEnumerable<TItem>>> loadDataAsync;
         private readonly Func<IEnumerable<TItem>, CancellationToken, Task<IEnumerable<ItemChange<TItem>>>> fetchUpdatesAsync;
 
@@ -33,12 +32,10 @@ namespace Async.Model
             this.fetchUpdatesAsync = fetchUpdatesAsync;
 
             // If the given seq factory does not produce async seqs, we need to wrap it
-            var asyncSeqFactory = seqFactory as Func<IEnumerable<TItem>, IAsyncSeq<TItem>>;
-            if (asyncSeqFactory == null)
-                asyncSeqFactory = items => seqFactory(items).AsAsync();
-
-            this.seqFactory = asyncSeqFactory;
-            this.seq = asyncSeqFactory(Enumerable.Empty<TItem>());
+            // TSS-360: Cannot perform the type-check on the delegate, need to do it on the resulting seq instead
+            var unwrappedSeq = seqFactory(Enumerable.Empty<TItem>());
+            var unwrappedSeqAsync = unwrappedSeq as IAsyncSeq<TItem>;
+            this.seq = unwrappedSeqAsync ?? unwrappedSeq.AsAsync();
 
             this.identityComparer = identityComparer ?? EqualityComparer<TItem>.Default;
         }
