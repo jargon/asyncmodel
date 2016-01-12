@@ -129,8 +129,10 @@ namespace Async.Model.AsyncLoaded
             TaskCompletionSource overallOperation;
             CancellationToken cancellationToken;
 
+            Debug.WriteLine("AsyncLoaderBase.PerformAsyncOperation: Taking mutex");
             using (mutex.Lock())
             {
+
                 // TODO: Should we fail instead of doing nothing? If we fail, it means client code MUST avoid race
                 // conditions, where multiple operations could be attempted at once. If we do nothing, client code may
                 // think an operation has been started, when it has not. Alternatively, we could actually "queue up"
@@ -149,6 +151,7 @@ namespace Async.Model.AsyncLoaded
                 // Prepare for operation inside lock _after_ it has been determined that operation should proceed
                 prepareOperation();
             }
+            Debug.WriteLine("AsyncLoaderBase.PerformAsyncOperation: Released mutex");
 
             NotifyOperationStarted(oldStatus);
 
@@ -194,6 +197,7 @@ namespace Async.Model.AsyncLoaded
 
             TLoadResult notificationData;
 
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Taking mutex");
             using (mutex.Lock())
             {
                 currentOperationCancelSource.Token.ThrowIfCancellationRequested();
@@ -204,6 +208,7 @@ namespace Async.Model.AsyncLoaded
                 currentOperationCancelSource.Dispose();
                 currentOperationCancelSource = null;
             }
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Released mutex");
 
             // Report result
             NotifyOperationCompleted(notificationData);
@@ -211,6 +216,7 @@ namespace Async.Model.AsyncLoaded
             // Now update status and complete task
             // NOTE: We wait until after notifications in order to simplify tests - if an event handler throws an
             // exception, it will be reflected in the task status
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Taking mutex");
             using (mutex.Lock())
             {
                 Debug.Assert(status == AsyncStatus.Loading);
@@ -218,6 +224,7 @@ namespace Async.Model.AsyncLoaded
                 status = AsyncStatus.Ready;
                 lastStartedOperation.SetResult();
             }
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Released mutex");
         }
 
         private void TaskFailedOrCancelled(Task previous)
@@ -228,6 +235,7 @@ namespace Async.Model.AsyncLoaded
             AsyncStatus newStatus;
             AggregateException locExc;
 
+            Debug.WriteLine("AsyncLoaderBase.TaskFailedOrCancelled: Taking mutex");
             using (mutex.Lock())
             {
                 oldStatus = status;
@@ -253,6 +261,7 @@ namespace Async.Model.AsyncLoaded
                 currentOperationCancelSource.Dispose();
                 currentOperationCancelSource = null;
             }
+            Debug.WriteLine("AsyncLoaderBase.TaskFailedOrCancelled: Released mutex");
 
             // Report result
             NotifyOperationFailedOrCancelled(oldStatus, newStatus, locExc);

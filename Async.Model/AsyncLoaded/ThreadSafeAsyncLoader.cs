@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -68,6 +69,7 @@ namespace Async.Model.AsyncLoaded
         {
             ItemChange<TItem>[] changes;
 
+            Debug.WriteLine("ThreadSafeAsyncLoader.Replace: Taking mutex");
             using (mutex.Lock())
             {
                 // NOTE: Cannot use LinqExtensions.Replace here, since we need to know which items
@@ -83,6 +85,7 @@ namespace Async.Model.AsyncLoaded
                 // Perform replacement
                 seq.ReplaceAll(changes.Select(c => c.Item));
             }
+            Debug.WriteLine("ThreadSafeAsyncLoader.Replace: Released mutex");
 
             NotifyCollectionChanged(changes.Where(c => c.Type == ChangeType.Updated));
         }
@@ -91,6 +94,7 @@ namespace Async.Model.AsyncLoaded
         {
             ItemChange<TItem>[] changes;
 
+            Debug.WriteLine("ThreadSafeAsyncLoader.ReplaceAll: Take mutex");
             using (mutex.Lock())
             {
                 changes = newItems.ChangesFrom(seq, identityComparer, updateComparer)
@@ -98,6 +102,7 @@ namespace Async.Model.AsyncLoaded
 
                 seq.ReplaceAll(newItems);
             }
+            Debug.WriteLine("ThreadSafeAsyncLoader.ReplaceAll: Released mutex");
 
             NotifyCollectionChanged(changes.Where(c => c.Type != ChangeType.Unchanged));
         }
@@ -106,6 +111,7 @@ namespace Async.Model.AsyncLoaded
         {
             ItemChange<TItem>[] changes;
 
+            Debug.WriteLine("ThreadSafeAsyncLoader.Clear: Take mutex");
             using (mutex.Lock())
             {
                 changes = seq.Select(item => new ItemChange<TItem>(ChangeType.Removed, item))
@@ -113,6 +119,7 @@ namespace Async.Model.AsyncLoaded
 
                 seq.Clear();
             }
+            Debug.WriteLine("ThreadSafeAsyncLoader.Clear: Released mutex");
 
             NotifyCollectionChanged(changes);
         }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -68,10 +69,12 @@ namespace Async.Model
             if (loadDataAsync == null)
             {
                 // We still need to clear the seq under lock
+                Debug.WriteLine("AsyncLoader.LoadAsync: Taking mutex");
                 using (mutex.Lock())
                 {
                     ClearInsideLock();
                 }
+                Debug.WriteLine("AsyncLoader.LoadAsync: Released mutex");
                 return TaskConstants.Completed;
             }
 
