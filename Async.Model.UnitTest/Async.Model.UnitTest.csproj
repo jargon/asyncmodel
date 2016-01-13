@@ -101,6 +101,9 @@
     <Otherwise />
   </Choose>
   <ItemGroup>
+    <Compile Include="..\SharedAssemblyInfo.cs">
+      <Link>Properties\SharedAssemblyInfo.cs</Link>
+    </Compile>
     <Compile Include="AsyncLoaded\AsyncLoaderBaseTest.cs" />
     <Compile Include="AsyncLoaded\ThreadSafeAsyncLoaderTest.cs" />
     <Compile Include="AsyncLoaderTest.cs" />
