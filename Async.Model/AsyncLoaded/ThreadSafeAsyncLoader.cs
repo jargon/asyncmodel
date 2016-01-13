@@ -51,7 +51,7 @@ namespace Async.Model.AsyncLoaded
 
         public override TItem Take()
         {
-            using (mutex.Lock())
+            lock (mutex)
             {
                 return base.Take();
             }
@@ -59,7 +59,7 @@ namespace Async.Model.AsyncLoaded
 
         public override void Conj(TItem item)
         {
-            using (mutex.Lock())
+            lock (mutex)
             {
                 base.Conj(item);
             }
@@ -70,7 +70,7 @@ namespace Async.Model.AsyncLoaded
             ItemChange<TItem>[] changes;
 
             Debug.WriteLine("ThreadSafeAsyncLoader.Replace: Taking mutex");
-            using (mutex.Lock())
+            lock (mutex)
             {
                 // NOTE: Cannot use LinqExtensions.Replace here, since we need to know which items
                 // were replaced for event notifications
@@ -95,7 +95,7 @@ namespace Async.Model.AsyncLoaded
             ItemChange<TItem>[] changes;
 
             Debug.WriteLine("ThreadSafeAsyncLoader.ReplaceAll: Take mutex");
-            using (mutex.Lock())
+            lock (mutex)
             {
                 changes = newItems.ChangesFrom(seq, identityComparer, updateComparer)
                     .ToArray();  // must materialize before we change seq
@@ -112,7 +112,7 @@ namespace Async.Model.AsyncLoaded
             ItemChange<TItem>[] changes;
 
             Debug.WriteLine("ThreadSafeAsyncLoader.Clear: Take mutex");
-            using (mutex.Lock())
+            lock (mutex)
             {
                 changes = seq.Select(item => new ItemChange<TItem>(ChangeType.Removed, item))
                     .ToArray();  // must materialize before we change seq
@@ -126,7 +126,7 @@ namespace Async.Model.AsyncLoaded
 
         public override IEnumerator<TItem> GetEnumerator()
         {
-            using (mutex.Lock())
+            lock (mutex)
             {
                 // Take a snapshot under lock and return an enumerator of the snapshot
                 return seq.ToList().GetEnumerator();

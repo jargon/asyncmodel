@@ -15,7 +15,7 @@ namespace Async.Model.AsyncLoaded
         {
             get
             {
-                using (mutex.Lock())
+                lock (mutex)
                 {
                     return item;
                 }

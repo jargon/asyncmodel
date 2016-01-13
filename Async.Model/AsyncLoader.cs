@@ -70,7 +70,7 @@ namespace Async.Model
             {
                 // We still need to clear the seq under lock
                 Debug.WriteLine("AsyncLoader.LoadAsync: Taking mutex");
-                using (mutex.Lock())
+                lock (mutex)
                 {
                     ClearInsideLock();
                 }
@@ -126,7 +126,7 @@ namespace Async.Model
             throw new NotSupportedException("AsyncLoader does not support ReplaceAll");
         }
 
-        // TODO: AsyncLoader should implement Clear instead of using ClearInsideLock once we switch mutex to a reentrant lock
+        // TODO: AsyncLoader should implement Clear instead of using ClearInsideLock if safe with the current locking semantics
         public virtual void Clear()
         {
             throw new NotSupportedException("AsyncLoader does not support Clear");
@@ -139,6 +139,7 @@ namespace Async.Model
 
             seq.Clear();
 
+            // TODO: Find a way to move this notification outside the lock
             NotifyCollectionChanged(changes);
         }
 
