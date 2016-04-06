@@ -14,10 +14,8 @@ namespace Async.Model.AsyncLoaded
         /// <summary>The root cancellation token this loader was initialized with. Allows for grouped cancellation.</summary>
         protected readonly CancellationToken rootCancellationToken;
 
-        // TODO: make mutex a plain object and switch to use lock keyword: we never use the async feature anyway and we want reentrancy
-        /// <summary>A lock that can be taken both synchronously and asynchronously. This lock should always be used when accessing mutable fields.</summary>
-        /// <remarks>An AsyncLock is NOT reentrant, so subclasses must be careful to only take it when it is known to not already be held.</remarks>
-        protected readonly AsyncLock mutex = new AsyncLock();
+        /// <summary>A lock that must be held while accessing mutable fields.</summary>
+        protected readonly object mutex = new object();
 
         /// <summary>The current status of any asynchronous load or update operation currently running.</summary>
         /// <remarks>This field must ONLY be accessed whilst holding the mutex lock!</remarks>
@@ -43,7 +41,7 @@ namespace Async.Model.AsyncLoaded
         {
             get
             {
-                using (mutex.Lock())
+                lock (mutex)
                 {
                     return status;
                 }
@@ -54,7 +52,7 @@ namespace Async.Model.AsyncLoaded
         {
             get
             {
-                using (mutex.Lock())
+                lock (mutex)
                 {
                     var operation = lastStartedOperation;
                     return (operation == null) ? null : operation.Task.Exception;
@@ -129,8 +127,10 @@ namespace Async.Model.AsyncLoaded
             TaskCompletionSource overallOperation;
             CancellationToken cancellationToken;
 
-            using (mutex.Lock())
+            Debug.WriteLine("AsyncLoaderBase.PerformAsyncOperation: Taking mutex");
+            lock (mutex)
             {
+
                 // TODO: Should we fail instead of doing nothing? If we fail, it means client code MUST avoid race
                 // conditions, where multiple operations could be attempted at once. If we do nothing, client code may
                 // think an operation has been started, when it has not. Alternatively, we could actually "queue up"
@@ -149,6 +149,7 @@ namespace Async.Model.AsyncLoaded
                 // Prepare for operation inside lock _after_ it has been determined that operation should proceed
                 prepareOperation();
             }
+            Debug.WriteLine("AsyncLoaderBase.PerformAsyncOperation: Released mutex");
 
             NotifyOperationStarted(oldStatus);
 
@@ -194,7 +195,8 @@ namespace Async.Model.AsyncLoaded
 
             TLoadResult notificationData;
 
-            using (mutex.Lock())
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Taking mutex");
+            lock (mutex)
             {
                 currentOperationCancelSource.Token.ThrowIfCancellationRequested();
 
@@ -204,6 +206,7 @@ namespace Async.Model.AsyncLoaded
                 currentOperationCancelSource.Dispose();
                 currentOperationCancelSource = null;
             }
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Released mutex");
 
             // Report result
             NotifyOperationCompleted(notificationData);
@@ -211,13 +214,15 @@ namespace Async.Model.AsyncLoaded
             // Now update status and complete task
             // NOTE: We wait until after notifications in order to simplify tests - if an event handler throws an
             // exception, it will be reflected in the task status
-            using (mutex.Lock())
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Taking mutex");
+            lock (mutex)
             {
                 Debug.Assert(status == AsyncStatus.Loading);
 
                 status = AsyncStatus.Ready;
                 lastStartedOperation.SetResult();
             }
+            Debug.WriteLine("AsyncLoaderBase.ProcessResultAndUpdateStatus: Released mutex");
         }
 
         private void TaskFailedOrCancelled(Task previous)
@@ -228,7 +233,8 @@ namespace Async.Model.AsyncLoaded
             AsyncStatus newStatus;
             AggregateException locExc;
 
-            using (mutex.Lock())
+            Debug.WriteLine("AsyncLoaderBase.TaskFailedOrCancelled: Taking mutex");
+            lock (mutex)
             {
                 oldStatus = status;
                 locExc = previous.Exception;
@@ -253,6 +259,7 @@ namespace Async.Model.AsyncLoaded
                 currentOperationCancelSource.Dispose();
                 currentOperationCancelSource = null;
             }
+            Debug.WriteLine("AsyncLoaderBase.TaskFailedOrCancelled: Released mutex");
 
             // Report result
             NotifyOperationFailedOrCancelled(oldStatus, newStatus, locExc);

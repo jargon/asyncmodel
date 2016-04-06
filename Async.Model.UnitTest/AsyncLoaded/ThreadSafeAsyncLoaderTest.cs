@@ -437,5 +437,28 @@ namespace Async.Model.UnitTest.AsyncLoaded
             listener.DidNotReceive().Invoke(loader, Arg.Any<IntChangesAlias>());
         }
         #endregion Clear
+
+        #region Events
+        [Test]
+        public void StatusChangesTwiceDuringLoad()
+        {
+            var statusChanges = new List<AsyncStatusTransition>();
+
+            IEnumerable<int> initialValues = new[] { 1 };
+
+            var loader = new ThreadSafeAsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(initialValues),
+                eventContext: new RunInlineSynchronizationContext());
+
+            loader.StatusChanged += (s, e) => statusChanges.Add(e);
+
+            loader.LoadAsync();  // load initial values
+
+            statusChanges.Should().Equal(
+                new AsyncStatusTransition(AsyncStatus.Ready, AsyncStatus.Loading),
+                new AsyncStatusTransition(AsyncStatus.Loading, AsyncStatus.Ready));
+        }
+        #endregion Events
     }
 }
