@@ -23,9 +23,9 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
 
 // This is needed for specifying NuGet package version since AssemblyVersion does
 // not support semantic versioning.
 // NOTE: Need to keep this in prerelease until we can switch to an upstream release of Nito.AsyncEx dependency
-[assembly: AssemblyInformationalVersion("1.0.1-beta1")]
+[assembly: AssemblyInformationalVersion("1.1.0-beta1")]
