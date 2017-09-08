@@ -67,6 +67,16 @@ namespace Async.Model.AsyncLoaded
 
         public override void Replace(TItem oldItem, TItem newItem)
         {
+            if (oldItem is ITimestamped)
+            {
+                ITimestamped o = (ITimestamped)oldItem, n = (ITimestamped)newItem;
+                if (n.LastUpdated <= o.LastUpdated)
+                {
+                    // Do nothing: old item is newer or same
+                    return;
+                }
+            }
+
             ItemChange<TItem>[] changes;
 
             Debug.WriteLine("ThreadSafeAsyncLoader.Replace: Taking mutex");
@@ -86,6 +96,32 @@ namespace Async.Model.AsyncLoaded
                 seq.ReplaceAll(changes.Select(c => c.Item));
             }
             Debug.WriteLine("ThreadSafeAsyncLoader.Replace: Released mutex");
+
+            NotifyCollectionChanged(changes.Where(c => c.Type == ChangeType.Updated));
+        }
+
+        public void Replace(Func<TItem, bool> predicate, TItem replacement)
+        {
+            List<ItemChange<TItem>> changes;
+
+            // Respect ITimestamped by only updating if newer - if items implement the interface
+            Func<TItem, bool> predicateToUse = (replacement is ITimestamped) ?
+                item => predicate(item) && ((ITimestamped)replacement).LastUpdated > ((ITimestamped)item).LastUpdated :
+                predicate;
+
+            Debug.WriteLine("ThreadSafeAsyncLoader.Replace2: Taking mutex");
+            lock (mutex)
+            {
+                changes = seq.Select(item =>
+                {
+                    return predicateToUse(item) ?
+                        new ItemChange<TItem>(ChangeType.Updated, replacement) :
+                        new ItemChange<TItem>(ChangeType.Unchanged, item);
+                }).ToList();
+
+                seq.ReplaceAll(changes.Select(c => c.Item));
+            }
+            Debug.WriteLine("ThreadSafeAsyncLoader.Replace2: Released mutex");
 
             NotifyCollectionChanged(changes.Where(c => c.Type == ChangeType.Updated));
         }
