@@ -319,7 +319,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
 
             public TimestampedInt(int value, DateTime lastUpdated) { this.Value = value; this.LastUpdated = lastUpdated; }
 
-            public override string ToString() { return $"{LastUpdated:s}: {Value}"; }
+            public override string ToString() { return $"{Value} @ {LastUpdated:s}"; }
 
             public override bool Equals(object obj)
             {
@@ -345,7 +345,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
-        public void Replace_OnTimestampedValues_OnlyUpdates_IfNewer()
+        public void Replace_OnTimestampedValues_DoesNotUpdate_IfOlder()
         {
             IEnumerable<TimestampedInt> originalItems = new[]
             {
@@ -354,7 +354,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             };
 
             // An older replacement
-            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 01, 01, 01, 08, 00, 00, DateTimeKind.Utc));
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 01, 01, 01, 08, 00, DateTimeKind.Utc));
 
             var loader = new ThreadSafeAsyncLoader<TimestampedInt>(
                 seqFactory: Seq.ListBased,
@@ -370,7 +370,32 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
-        public void Replace_WithPredicate_OnTimestampedValues_OnlyUpdates_IfNewer()
+        public void Replace_OnTimestampedValues_Updates_IfNewer()
+        {
+            IEnumerable<TimestampedInt> originalItems = new[]
+            {
+                new TimestampedInt(1, new DateTime(2017, 09, 08, 18, 56, 00, DateTimeKind.Utc)),
+                new TimestampedInt(2, new DateTime(2016, 01, 01, 10, 00, 00, DateTimeKind.Utc))
+            };
+
+            // A newer replacement
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 09, 08, 18, 56, 01, DateTimeKind.Utc));
+
+            var loader = new ThreadSafeAsyncLoader<TimestampedInt>(
+                seqFactory: Seq.ListBased,
+                loadDataAsync: _ => Task.FromResult(originalItems),
+                identityComparer: new TimestampedIntValueComparer());
+
+            loader.LoadAsync();
+
+            // --- Perform ---
+            loader.Replace(originalItems.ElementAt(0), replacement);
+
+            loader.Should().BeEquivalentTo(new[] { replacement, originalItems.ElementAt(1) });
+        }
+
+        [Test]
+        public void Replace_WithPredicate_OnTimestampedValues_DoesNotUpdate_IfOlder()
         {
             IEnumerable<TimestampedInt> originalItems = new[]
             {
@@ -379,7 +404,7 @@ namespace Async.Model.UnitTest.AsyncLoaded
             };
 
             // An older replacement
-            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 01, 01, 01, 08, 00, 00, DateTimeKind.Utc));
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 01, 01, 01, 08, 00, DateTimeKind.Utc));
 
             var loader = new ThreadSafeAsyncLoader<TimestampedInt>(seqFactory: Seq.ListBased, loadDataAsync: _ => Task.FromResult(originalItems));
 
@@ -389,6 +414,28 @@ namespace Async.Model.UnitTest.AsyncLoaded
             loader.Replace(i => i.Value == 1, replacement);
 
             loader.Should().BeEquivalentTo(originalItems);
+        }
+
+        [Test]
+        public void Replace_WithPredicate_OnTimestampedValues_Updates_IfNewer()
+        {
+            IEnumerable<TimestampedInt> originalItems = new[]
+            {
+                new TimestampedInt(1, new DateTime(2017, 09, 08, 18, 56, 00, DateTimeKind.Utc)),
+                new TimestampedInt(2, new DateTime(2016, 01, 01, 10, 00, 00, DateTimeKind.Utc))
+            };
+
+            // A newer replacement
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2018, 01, 01, 01, 08, 00, DateTimeKind.Utc));
+
+            var loader = new ThreadSafeAsyncLoader<TimestampedInt>(seqFactory: Seq.ListBased, loadDataAsync: _ => Task.FromResult(originalItems));
+
+            loader.LoadAsync();
+
+            // --- Perform ---
+            loader.Replace(i => i.Value == 1, replacement);
+
+            loader.Should().BeEquivalentTo(new[] { replacement, originalItems.ElementAt(1) });
         }
         #endregion Replace
 
