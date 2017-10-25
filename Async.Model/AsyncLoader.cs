@@ -121,6 +121,11 @@ namespace Async.Model
             throw new NotSupportedException("AsyncLoader does not support Replace");
         }
 
+        public virtual void Replace(Func<TItem, bool> predicate, TItem replacement)
+        {
+            throw new NotSupportedException("AsyncLoader does not support Replace");
+        }
+
         public virtual void ReplaceAll(IEnumerable<TItem> newItems)
         {
             throw new NotSupportedException("AsyncLoader does not support ReplaceAll");
