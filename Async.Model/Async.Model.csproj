@@ -34,6 +34,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\SharedAssemblyInfo.cs">
+      <Link>Properties\SharedAssemblyInfo.cs</Link>
+    </Compile>
     <Compile Include="AsyncLoaded\AsyncItemLoader.cs" />
     <Compile Include="AsyncLoaded\AsyncLoaderBase.cs" />
     <Compile Include="AsyncLoaded\IAsyncItemLoader.cs" />
@@ -48,6 +51,7 @@
     <Compile Include="AsyncLoaded\IAsyncLoaded.cs" />
     <Compile Include="IItemChange.cs" />
     <Compile Include="ItemChange.cs" />
+    <Compile Include="ITimestamped.cs" />
     <Compile Include="LinqExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Sequence\IAsyncSeq.cs" />

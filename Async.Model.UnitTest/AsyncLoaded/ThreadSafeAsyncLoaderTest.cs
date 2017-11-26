@@ -2,13 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Threading.Tasks.Schedulers;
 using Async.Model.AsyncLoaded;
 using Async.Model.Context;
 using Async.Model.Sequence;
 using Async.Model.TestExtensions;
 using FluentAssertions;
-using Nito.AsyncEx;
 using NSubstitute;
 using NUnit.Framework;
 // Because noone wants to type out this every time...
@@ -26,6 +24,15 @@ namespace Async.Model.UnitTest.AsyncLoaded
         {
             var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased);
             loader.Replace(1, 2);  // --- Perform ---
+            loader.Should().BeEmpty();
+        }
+
+        [Test]
+        public void Replace_WithPredicate_WorksForEmptyLoader()
+        {
+            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased);
+            loader.Replace(i => i == 1, 2);  // --- Perform ---
+            loader.Should().BeEmpty();
         }
 
         [Test]
@@ -41,13 +48,37 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
+        public void Replace_WithPredicate_CanReplaceSingleton()
+        {
+            IEnumerable<int> loadedInts = new[] { 1 };
+            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, tok => Task.FromResult(loadedInts));
+            loader.LoadAsync();
+
+            loader.Replace(i => i == 1, 2); // --- Perform ---
+
+            loader.Should().BeEquivalentTo(new[] { 2 });
+        }
+
+        [Test]
         public void ReplaceOnSingletonDoesNothingWhenNotMatched()
         {
             IEnumerable<int> loadedInts = new[] { 1 };
             var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, tok => Task.FromResult(loadedInts));
             loader.LoadAsync();
 
-            loader.Replace(2, 1);  // --- Perform ---
+            loader.Replace(2, 3);  // --- Perform ---
+
+            loader.Should().BeEquivalentTo(new[] { 1 });
+        }
+
+        [Test]
+        public void Replace_WithPredicate_OnSingleton_DoesNothing_WhenNotMatched()
+        {
+            IEnumerable<int> loadedInts = new[] { 1 };
+            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, tok => Task.FromResult(loadedInts));
+            loader.LoadAsync();
+
+            loader.Replace(i => i == 2, 3);  // --- Perform ---
 
             loader.Should().BeEquivalentTo(new[] { 1 });
         }
@@ -65,6 +96,18 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
+        public void Replace_WithPredicate_CanReplace_WhenLoader_HasMultipleItems()
+        {
+            IEnumerable<int> loadedInts = new[] { 1, 2, 3 };
+            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, tok => Task.FromResult(loadedInts));
+            loader.LoadAsync();
+
+            loader.Replace(i => i == 2, 4);  // --- Perform ---
+
+            loader.Should().BeEquivalentTo(new[] { 1, 4, 3 });
+        }
+
+        [Test]
         public void ReplaceCanReplaceMultipleItems()
         {
             IEnumerable<int> loadedInts = new[] { 1, 1, 1 };
@@ -72,6 +115,18 @@ namespace Async.Model.UnitTest.AsyncLoaded
             loader.LoadAsync();
 
             loader.Replace(1, 2);  // --- Perform ---
+
+            loader.Should().BeEquivalentTo(new[] { 2, 2, 2 });
+        }
+
+        [Test]
+        public void Replace_WithPredicate_CanReplace_MultipleItems()
+        {
+            IEnumerable<int> loadedInts = new[] { 1, 1, 1 };
+            var loader = new ThreadSafeAsyncLoader<int>(Seq.ListBased, tok => Task.FromResult(loadedInts));
+            loader.LoadAsync();
+
+            loader.Replace(i => i == 1, 2);  // --- Perform ---
 
             loader.Should().BeEquivalentTo(new[] { 2, 2, 2 });
         }
@@ -99,6 +154,28 @@ namespace Async.Model.UnitTest.AsyncLoaded
         }
 
         [Test]
+        public void Replace_WithPredicate_Notifies_OfChange()
+        {
+            IEnumerable<int> loadedInts = new[] { 2 };
+            var loader = new ThreadSafeAsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventContext: new RunInlineSynchronizationContext());
+
+            loader.LoadAsync();  // load initial items
+
+            var listener = Substitute.For<CollectionChangedHandler<int>>();
+            loader.CollectionChanged += listener;
+
+
+            loader.Replace(i => i == 2, 1);   // --- Perform ---
+
+
+            listener.Received(1).Invoke(loader, Fluent.Match<IntChangesAlias>(changes =>
+                changes.Should().ContainSingle().Which.ShouldBeEquivalentTo(new ItemChange<int>(ChangeType.Updated, 1))));
+        }
+
+        [Test]
         public void ReplaceNotifiesOfEveryChangeMade()
         {
             IEnumerable<int> loadedInts = new[] { 2, 2, 2, 2 };
@@ -117,6 +194,28 @@ namespace Async.Model.UnitTest.AsyncLoaded
 
 
             listener.Received().Invoke(loader, Fluent.Match<IntChangesAlias>(changes =>
+                changes.Should().BeEquivalentTo(Enumerable.Repeat(new ItemChange<int>(ChangeType.Updated, 1), 4))));
+        }
+
+        [Test]
+        public void Replace_WithPredicate_Notifies_OfEveryChangeMade()
+        {
+            IEnumerable<int> loadedInts = new[] { 2, 2, 2, 2 };
+            var loader = new ThreadSafeAsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(loadedInts),
+                eventContext: new RunInlineSynchronizationContext());
+
+            loader.LoadAsync();  // load initial items
+
+            var listener = Substitute.For<CollectionChangedHandler<int>>();
+            loader.CollectionChanged += listener;
+
+
+            loader.Replace(i => i == 2, 1);   // --- Perform ---
+
+
+            listener.Received(1).Invoke(loader, Fluent.Match<IntChangesAlias>(changes =>
                 changes.Should().BeEquivalentTo(Enumerable.Repeat(new ItemChange<int>(ChangeType.Updated, 1), 4))));
         }
 
@@ -211,6 +310,132 @@ namespace Async.Model.UnitTest.AsyncLoaded
 
             // Verify that changes were made by checking for collection changed events
             collectionChangedHandler.Received().Invoke(loader, Arg.Any<IEnumerable<ItemChange<IntWrapper>>>());
+        }
+
+        private class TimestampedInt : ITimestamped
+        {
+            public int Value { get; }
+            public DateTime LastUpdated { get; }
+
+            public TimestampedInt(int value, DateTime lastUpdated) { this.Value = value; this.LastUpdated = lastUpdated; }
+
+            public override string ToString() { return $"{Value} @ {LastUpdated:s}"; }
+
+            public override bool Equals(object obj)
+            {
+                TimestampedInt other = obj as TimestampedInt;
+                return (other != null && this.Value == other.Value && this.LastUpdated == other.LastUpdated);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    return 3 + 5 * Value.GetHashCode() + 7 * LastUpdated.GetHashCode();
+                }
+            }
+        }
+
+        // A comparer that ignores the timestamp part
+        private class TimestampedIntValueComparer : IEqualityComparer<TimestampedInt>
+        {
+            public bool Equals(TimestampedInt x, TimestampedInt y) { return x.Value == y.Value; }
+
+            public int GetHashCode(TimestampedInt obj) { return 3 + 5 * obj.Value.GetHashCode(); }
+        }
+
+        [Test]
+        public void Replace_OnTimestampedValues_DoesNotUpdate_IfOlder()
+        {
+            IEnumerable<TimestampedInt> originalItems = new[]
+            {
+                new TimestampedInt(1, new DateTime(2017, 09, 08, 18, 56, 00, DateTimeKind.Utc)),
+                new TimestampedInt(2, new DateTime(2016, 01, 01, 10, 00, 00, DateTimeKind.Utc))
+            };
+
+            // An older replacement
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 01, 01, 01, 08, 00, DateTimeKind.Utc));
+
+            var loader = new ThreadSafeAsyncLoader<TimestampedInt>(
+                seqFactory: Seq.ListBased,
+                loadDataAsync: _ => Task.FromResult(originalItems),
+                identityComparer: new TimestampedIntValueComparer());
+
+            loader.LoadAsync();
+
+            // --- Perform ---
+            loader.Replace(originalItems.ElementAt(0), replacement);
+
+            loader.Should().BeEquivalentTo(originalItems);
+        }
+
+        [Test]
+        public void Replace_OnTimestampedValues_Updates_IfNewer()
+        {
+            IEnumerable<TimestampedInt> originalItems = new[]
+            {
+                new TimestampedInt(1, new DateTime(2017, 09, 08, 18, 56, 00, DateTimeKind.Utc)),
+                new TimestampedInt(2, new DateTime(2016, 01, 01, 10, 00, 00, DateTimeKind.Utc))
+            };
+
+            // A newer replacement
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 09, 08, 18, 56, 01, DateTimeKind.Utc));
+
+            var loader = new ThreadSafeAsyncLoader<TimestampedInt>(
+                seqFactory: Seq.ListBased,
+                loadDataAsync: _ => Task.FromResult(originalItems),
+                identityComparer: new TimestampedIntValueComparer());
+
+            loader.LoadAsync();
+
+            // --- Perform ---
+            loader.Replace(originalItems.ElementAt(0), replacement);
+
+            loader.Should().BeEquivalentTo(new[] { replacement, originalItems.ElementAt(1) });
+        }
+
+        [Test]
+        public void Replace_WithPredicate_OnTimestampedValues_DoesNotUpdate_IfOlder()
+        {
+            IEnumerable<TimestampedInt> originalItems = new[]
+            {
+                new TimestampedInt(1, new DateTime(2017, 09, 08, 18, 56, 00, DateTimeKind.Utc)),
+                new TimestampedInt(2, new DateTime(2016, 01, 01, 10, 00, 00, DateTimeKind.Utc))
+            };
+
+            // An older replacement
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2017, 01, 01, 01, 08, 00, DateTimeKind.Utc));
+
+            var loader = new ThreadSafeAsyncLoader<TimestampedInt>(seqFactory: Seq.ListBased, loadDataAsync: _ => Task.FromResult(originalItems));
+
+            loader.LoadAsync();
+
+            // --- Perform ---
+            loader.Replace(i => i.Value == 1, replacement);
+
+            loader.Should().BeEquivalentTo(originalItems);
+        }
+
+        [Test]
+        public void Replace_WithPredicate_OnTimestampedValues_Updates_IfNewer()
+        {
+            IEnumerable<TimestampedInt> originalItems = new[]
+            {
+                new TimestampedInt(1, new DateTime(2017, 09, 08, 18, 56, 00, DateTimeKind.Utc)),
+                new TimestampedInt(2, new DateTime(2016, 01, 01, 10, 00, 00, DateTimeKind.Utc))
+            };
+
+            // A newer replacement
+            TimestampedInt replacement = new TimestampedInt(3, new DateTime(2018, 01, 01, 01, 08, 00, DateTimeKind.Utc));
+
+            var loader = new ThreadSafeAsyncLoader<TimestampedInt>(seqFactory: Seq.ListBased, loadDataAsync: _ => Task.FromResult(originalItems));
+
+            loader.LoadAsync();
+
+            // --- Perform ---
+            loader.Replace(i => i.Value == 1, replacement);
+
+            loader.Should().BeEquivalentTo(new[] { replacement, originalItems.ElementAt(1) });
         }
         #endregion Replace
 
@@ -437,5 +662,28 @@ namespace Async.Model.UnitTest.AsyncLoaded
             listener.DidNotReceive().Invoke(loader, Arg.Any<IntChangesAlias>());
         }
         #endregion Clear
+
+        #region Events
+        [Test]
+        public void StatusChangesTwiceDuringLoad()
+        {
+            var statusChanges = new List<AsyncStatusTransition>();
+
+            IEnumerable<int> initialValues = new[] { 1 };
+
+            var loader = new ThreadSafeAsyncLoader<int>(
+                Seq.ListBased,
+                loadDataAsync: tok => Task.FromResult(initialValues),
+                eventContext: new RunInlineSynchronizationContext());
+
+            loader.StatusChanged += (s, e) => statusChanges.Add(e);
+
+            loader.LoadAsync();  // load initial values
+
+            statusChanges.Should().Equal(
+                new AsyncStatusTransition(AsyncStatus.Ready, AsyncStatus.Loading),
+                new AsyncStatusTransition(AsyncStatus.Loading, AsyncStatus.Ready));
+        }
+        #endregion Events
     }
 }

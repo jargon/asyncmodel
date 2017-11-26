@@ -4,25 +4,25 @@ using System.Threading.Tasks;
 
 namespace Async.Model.AsyncLoaded
 {
-    public sealed class AsyncItemLoader<T> : AsyncLoaderBase<Tuple<T, T>>, IAsyncItemLoader<T>
+    public sealed class AsyncItemLoader<TItem, TProgress> : AsyncLoaderBase<Tuple<TItem, TItem>>, IAsyncItemLoader<TItem, TProgress>
     {
-        private readonly Func<CancellationToken, Task<T>> loadAsync;
-        private readonly Func<T, CancellationToken, Task<T>> updateAsync;
+        private readonly Func<IProgress<TProgress>, CancellationToken, Task<TItem>> loadAsync;
+        private readonly Func<TItem, IProgress<TProgress>, CancellationToken, Task<TItem>> updateAsync;
 
-        private T item;
+        private TItem item;
 
-        public T Item
+        public TItem Item
         {
             get
             {
-                using (mutex.Lock())
+                lock (mutex)
                 {
                     return item;
                 }
             }
         }
 
-        public event ItemChangedHandler<T> ItemChanged
+        public event ItemChangedHandler<TItem> ItemChanged
         {
             add
             {
@@ -37,26 +37,26 @@ namespace Async.Model.AsyncLoaded
             }
         }
 
-        public AsyncItemLoader(Func<CancellationToken, Task<T>> loadAsync, Func<T, CancellationToken, Task<T>> updateAsync, CancellationToken rootCancellationToken)
+        public AsyncItemLoader(Func<IProgress<TProgress>, CancellationToken, Task<TItem>> loadAsync, Func<TItem, IProgress<TProgress>, CancellationToken, Task<TItem>> updateAsync, CancellationToken rootCancellationToken)
             : base(rootCancellationToken)
         {
             this.loadAsync = loadAsync;
             this.updateAsync = updateAsync;
         }
 
-        public Task LoadAsync()
+        public Task LoadAsync(IProgress<TProgress> progress)
         {
             // TODO: Should we follow behaviour of AsyncLoader and clear item during load?
-            return PerformAsyncOperation(() => { }, loadAsync, ProcessItemUnderLock);
+            return PerformAsyncOperation(() => { }, tok => loadAsync(progress, tok), ProcessItemUnderLock);
         }
 
-        public Task UpdateAsync()
+        public Task UpdateAsync(IProgress<TProgress> progress)
         {
             var it = Item;  // read under lock
-            return PerformAsyncOperation(() => { }, token => updateAsync(it, token), ProcessItemUnderLock);
+            return PerformAsyncOperation(() => { }, tok => updateAsync(it, progress, tok), ProcessItemUnderLock);
         }
 
-        private Tuple<T, T> ProcessItemUnderLock(T newItem, CancellationToken cancellationToken)
+        private Tuple<TItem, TItem> ProcessItemUnderLock(TItem newItem, CancellationToken cancellationToken)
         {
             var oldItem = this.item;
             this.item = newItem;

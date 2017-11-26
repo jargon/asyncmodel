@@ -1,13 +1,18 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.22823.1
+# Visual Studio 2013
+VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Async.Model", "Async.Model\Async.Model.csproj", "{222AB3C6-BFDB-40BB-B0BA-9C059B1437E3}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Async.Model.UnitTest", "Async.Model.UnitTest\Async.Model.UnitTest.csproj", "{F2FDCF26-E207-4AD6-8BC9-B7DB442EFF1F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Async.Model.TestExtensions", "Async.Model.TestExtensions\Async.Model.TestExtensions.csproj", "{44B10DD1-3734-443F-9D74-EB8BEB40CA93}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{966FC58B-7F6C-49A4-88B2-403F809FFCF4}"
+	ProjectSection(SolutionItems) = preProject
+		SharedAssemblyInfo.cs = SharedAssemblyInfo.cs
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
